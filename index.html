@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Settlers of Hogsmeade</title>
+<meta name="description" content="A Settlers of Catan–inspired board game with a Hogwarts twist. Build cottages, castles and Floo routes, cast spells, and dodge the Dementor.">
+<meta name="theme-color" content="#0a0c16">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Spectral:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="sigil">⚡</span>
+    <div>
+      <h1>Settlers of Hogsmeade</h1>
+      <p class="tagline">First to <strong>10</strong> points wins the House Cup</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <button id="btn-rules" class="ghost">Rules</button>
+    <button id="btn-new" class="ghost">New Game</button>
+  </div>
+</header>
+
+<main id="game" hidden>
+  <section class="board-wrap">
+    <svg id="board" role="img" aria-label="Game board"></svg>
+    <div id="board-banner" class="board-banner" hidden></div>
+  </section>
+
+  <aside class="sidebar">
+    <div id="turn-card" class="turn-card">
+      <div class="turn-head">
+        <span id="turn-crest" class="crest">🦁</span>
+        <div>
+          <div id="turn-name" class="turn-name">Gryffindor</div>
+          <div id="turn-hint" class="turn-hint">Place your first Cottage</div>
+        </div>
+        <div id="turn-vp" class="vp-badge" title="Victory points">0</div>
+      </div>
+
+      <div class="dice-row">
+        <div id="die1" class="die">·</div>
+        <div id="die2" class="die">·</div>
+        <button id="btn-roll" class="primary">Roll the Dice</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Your Hand</h2>
+      <div id="hand" class="hand"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Build</h2>
+      <div id="build-actions" class="build-grid"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Spell Scrolls</h2>
+      <div id="spells" class="spells"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Trade</h2>
+      <div class="trade-row">
+        <button id="btn-bank" class="ghost wide">Trade with the Bank</button>
+        <button id="btn-offer" class="ghost wide">Offer a Trade</button>
+      </div>
+    </div>
+
+    <button id="btn-end" class="primary wide end-turn">End Turn</button>
+  </aside>
+
+  <section class="lower">
+    <div id="players" class="players"></div>
+    <div class="panel log-panel">
+      <h2>Chronicle</h2>
+      <div id="log" class="log"></div>
+    </div>
+  </section>
+</main>
+
+<div id="modal-root"></div>
+
+<script src="js/board.js"></script>
+<script src="js/game.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/render.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
