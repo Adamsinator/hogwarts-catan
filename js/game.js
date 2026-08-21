@@ -35,7 +35,7 @@ const BASE_HAND_LIMIT = 7;
 
 const SPELLS = {
   auror:    { name: 'Auror',        icon: '\u{1F52E}', desc: 'Banish the Dementor to another region and steal one card from a player there.' },
-  floo:     { name: 'Floo Powder',  icon: '\u{1F525}', desc: 'Build two Floo Routes for free.' },
+  floo:     { name: 'Floo Powder',  icon: '\u{1F525}', desc: 'Build two routes for free — Floo Routes, or Broomstick Routes on the voyage map.' },
   accio:    { name: 'Accio',        icon: '\u{2728}',  desc: 'Take any two resources from the supply.' },
   imperio:  { name: 'Imperio',      icon: '\u{1F300}', desc: 'Name a resource; every other player hands you all of theirs.' },
   merlin:   { name: 'Order of Merlin', icon: '\u{1F396}', desc: 'Worth 1 victory point. Kept secret until you win.' },
@@ -552,10 +552,27 @@ function playableSpells(p) {
   return p.spells;
 }
 
+// Which kinds of route a Floo Powder could actually lay right now.
+function flooKindsAvailable(playerId) {
+  const p = state.players[playerId];
+  const kinds = state.scenario === 'voyage' ? ['road', 'broom'] : ['road'];
+  return kinds.filter((k) => p.pieces[k] > 0 && validRoadSpots(playerId, null, k).length > 0);
+}
+
 function playSpell(playerId, card, opts) {
   const p = state.players[playerId];
   const idx = p.spells.indexOf(card);
   if (idx < 0 || p.playedSpellThisTurn) return false;
+
+  // Check the spell can actually do something before it leaves the hand — a
+  // scroll spent on nothing is a scroll silently lost.
+  let flooKind = null;
+  if (card === 'floo') {
+    const kinds = flooKindsAvailable(playerId);
+    if (!kinds.length) return false;
+    flooKind = (opts && opts.kind && kinds.includes(opts.kind)) ? opts.kind : kinds[0];
+  }
+
   p.spells.splice(idx, 1);
   p.playedSpellThisTurn = true;
 
@@ -566,9 +583,9 @@ function playSpell(playerId, card, opts) {
     state.returnPhase = state.phase === 'roll' ? 'roll' : 'main';
     state.phase = 'moveDementor';
   } else if (card === 'floo') {
-    logMsg(p.name + ' casts Floo Powder — two free Floo Routes.', 'spell');
-    const avail = validRoadSpots(playerId).length;
-    state.pending = { kind: 'road', free: true, remaining: Math.min(2, avail, p.pieces.road) };
+    logMsg(p.name + ' casts Floo Powder — two free ' + PIECE_NAMES[flooKind] + 's.', 'spell');
+    const avail = validRoadSpots(playerId, null, flooKind).length;
+    state.pending = { kind: flooKind, free: true, remaining: Math.min(2, avail, p.pieces[flooKind]) };
     if (state.pending.remaining <= 0) state.pending = null;
   } else if (card === 'accio') {
     logMsg(p.name + ' casts Accio for ' + RESOURCES[opts.a].icon + ' ' + RESOURCES[opts.b].icon + '.', 'spell');

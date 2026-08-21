@@ -350,8 +350,36 @@ function castSpell(card) {
   const p = currentPlayer();
   if (card === 'accio') return promptAccio(p);
   if (card === 'imperio') return promptImperio(p);
+  if (card === 'floo') return promptFloo(p);
   playSpell(p.id, card, {});
   tick();
+}
+
+function promptFloo(p) {
+  const kinds = flooKindsAvailable(p.id);
+  if (!kinds.length) {
+    alert('There is nowhere to lay a route right now — the scroll stays in your hand.');
+    return;
+  }
+  if (kinds.length === 1) {
+    playSpell(p.id, 'floo', { kind: kinds[0] });
+    return tick();
+  }
+  const m = modal(
+    '<h2>' + SPELLS.floo.icon + ' Floo Powder</h2>' +
+    '<p class="sub">Two free routes. Over land, or over the water?</p>' +
+    '<div class="row" id="floo-row"></div>' +
+    '<div class="actions"><button class="ghost" data-x>Cancel</button></div>'
+  );
+  const row = m.root.querySelector('#floo-row');
+  kinds.forEach((k) => {
+    const b = document.createElement('button');
+    b.className = 'pick';
+    b.textContent = PIECE_NAMES[k] + 's';
+    b.addEventListener('click', () => { m.close(); playSpell(p.id, 'floo', { kind: k }); tick(); });
+    row.appendChild(b);
+  });
+  m.root.querySelector('[data-x]').addEventListener('click', m.close);
 }
 
 function promptAccio(p) {

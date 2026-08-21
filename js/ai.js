@@ -417,8 +417,13 @@ const AI = (function () {
         return { card: 'accio', opts: { a, b } };
       }
     }
-    if (p.spells.includes('floo') && p.pieces.road >= 2 && validRoadSpots(p.id).length >= 2) {
-      return { card: 'floo', opts: {} };
+    if (p.spells.includes('floo')) {
+      const kinds = flooKindsAvailable(p.id);
+      if (kinds.length) {
+        // mid-crossing, spend it on the flight rather than on roads
+        const flying = state.scenario === 'voyage' && kinds.includes('broom') && !!bestFlightSpot(p.id);
+        return { card: 'floo', opts: { kind: flying ? 'broom' : kinds[0] } };
+      }
     }
     if (p.spells.includes('auror')) {
       const dem = state.board.hexes[state.dementor];
