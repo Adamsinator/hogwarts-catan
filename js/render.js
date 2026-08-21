@@ -40,7 +40,185 @@ function renderDefs(svg) {
 
   const shadow = el('filter', { id: 'drop', x: '-50%', y: '-50%', width: '200%', height: '200%' }, defs);
   el('feDropShadow', { dx: '0', dy: '2', stdDeviation: '2', 'flood-color': '#000', 'flood-opacity': '0.55' }, shadow);
+
+  // One hex-shaped clip, reused by every tile's artwork.
+  const clip = el('clipPath', { id: 'hexClip' }, defs);
+  el('polygon', { points: hexPoints(0, 0) }, clip);
+
+  // Vertical gradient per terrain: light where the sky hits, dark at the base.
+  Object.keys(TERRAIN_ART).forEach((key) => {
+    const a = TERRAIN_ART[key];
+    const grad = el('linearGradient', { id: 'terr-' + key, x1: '0', y1: '0', x2: '0', y2: '1' }, defs);
+    el('stop', { offset: '0%', 'stop-color': a.top }, grad);
+    el('stop', { offset: '100%', 'stop-color': a.bottom }, grad);
+  });
+
+  // Soft dark disc so number tokens stay legible over busy artwork.
+  const tok = el('radialGradient', { id: 'tokenHalo' }, defs);
+  el('stop', { offset: '0%', 'stop-color': '#000', 'stop-opacity': '0.5' }, tok);
+  el('stop', { offset: '100%', 'stop-color': '#000', 'stop-opacity': '0' }, tok);
 }
+
+/* ------------------------------------------------------------------
+   Terrain artwork. Each painter draws inside a hex centred on (0,0),
+   spanning x ∈ [-52, 52] and y ∈ [-60, 60], and is clipped to the hex.
+------------------------------------------------------------------ */
+
+const TERRAIN_ART = {
+  forest:     { top: '#37764b', bottom: '#12301f' },
+  quarry:     { top: '#8d4d2d', bottom: '#4a2615' },
+  owlery:     { top: '#4e7aa8', bottom: '#20364d' },
+  greenhouse: { top: '#9c8529', bottom: '#4c400f' },
+  gringotts:  { top: '#8e8d98', bottom: '#4a4a55' },
+  azkaban:    { top: '#32323f', bottom: '#0d0d15' },
+};
+
+function conifer(g, x, y, s, dark, light) {
+  el('rect', { x: x - 1.7 * s, y: y - 3 * s, width: 3.4 * s, height: 8 * s, fill: '#2b1c10', opacity: 0.9 }, g);
+  [0, 1, 2].forEach((i) => {
+    const w = (12 - i * 2.4) * s;
+    const top = y - (12 + i * 7.5) * s;
+    const base = y - (1 + i * 7.5) * s;
+    el('polygon', {
+      points: [x + ',' + top, (x + w) + ',' + base, (x - w) + ',' + base].join(' '),
+      fill: i === 2 ? light : dark, stroke: '#0c2416', 'stroke-width': 0.8,
+    }, g);
+  });
+}
+
+// A faceted rock: lit top-left, shaded right.
+function boulder(g, x, y, r) {
+  el('polygon', {
+    points: [
+      (x - r) + ',' + (y + r * 0.75), (x - r * 0.55) + ',' + (y - r * 0.9),
+      (x + r * 0.35) + ',' + (y - r), (x + r) + ',' + (y + r * 0.2),
+      (x + r * 0.6) + ',' + (y + r * 0.8),
+    ].join(' '),
+    fill: '#94512e', stroke: '#3a1d0f', 'stroke-width': 1.6, 'stroke-linejoin': 'round',
+  }, g);
+  el('polygon', {
+    points: [
+      (x - r) + ',' + (y + r * 0.75), (x - r * 0.55) + ',' + (y - r * 0.9),
+      (x + r * 0.35) + ',' + (y - r), (x - r * 0.1) + ',' + (y + r * 0.3),
+    ].join(' '),
+    fill: '#b06a3f',
+  }, g);
+  el('polygon', {
+    points: [
+      (x + r * 0.35) + ',' + (y - r), (x + r) + ',' + (y + r * 0.2),
+      (x + r * 0.6) + ',' + (y + r * 0.8), (x - r * 0.1) + ',' + (y + r * 0.3),
+    ].join(' '),
+    fill: '#6f3b21',
+  }, g);
+}
+
+/* Artwork is composed as a ring around the middle, because the number token
+   sits dead centre and would otherwise hide the focal detail. */
+
+function paintForest(g) {
+  el('ellipse', { cx: 0, cy: 30, rx: 62, ry: 26, fill: '#0f2a1a', opacity: 0.45 }, g);
+  [[-40, 20, 1.0], [-42, -6, 0.88], [-24, -24, 0.82], [0, -32, 0.78], [24, -24, 0.82],
+   [42, -6, 0.88], [40, 20, 1.0], [24, 42, 1.02], [-24, 42, 1.02], [0, 54, 0.92],
+  ].forEach(([x, y, s]) => conifer(g, x, y, s, '#144026', '#1f5c37'));
+  el('ellipse', { cx: 0, cy: 56, rx: 46, ry: 10, fill: '#0a2114', opacity: 0.5 }, g);
+}
+
+function paintQuarry(g) {
+  el('path', { d: 'M -60 -6 L -28 -20 L 0 -10 L 26 -22 L 60 -8 L 60 60 L -60 60 Z', fill: '#6c3a22', opacity: 0.85 }, g);
+  el('path', { d: 'M -60 14 L -30 2 L -2 12 L 28 0 L 60 12 L 60 60 L -60 60 Z', fill: '#7d4529', opacity: 0.9 }, g);
+  el('path', { d: 'M -60 34 L -32 24 L 0 34 L 30 22 L 60 32 L 60 60 L -60 60 Z', fill: '#8d4f2e', opacity: 0.85 }, g);
+  boulder(g, -34, -18, 15);
+  boulder(g, 32, -22, 12);
+  boulder(g, -32, 30, 13);
+  boulder(g, 34, 28, 14);
+  el('path', { d: 'M -6 46 l 12 -9 l 4 5 z', fill: '#c98f5f', opacity: 0.55 }, g);
+}
+
+function paintOwlery(g) {
+  el('circle', { cx: 33, cy: -34, r: 10, fill: '#ffeab5', opacity: 0.92 }, g);
+  el('circle', { cx: 28, cy: -37, r: 9, fill: '#4e7aa8' }, g);
+  el('ellipse', { cx: 0, cy: 48, rx: 60, ry: 22, fill: '#1a2c40', opacity: 0.75 }, g);
+
+  // main tower, set left of the token
+  el('path', { d: 'M -40 44 L -37 -18 L -15 -18 L -12 44 Z', fill: '#22344a', stroke: '#131e2c', 'stroke-width': 2 }, g);
+  el('polygon', { points: '-26,-42 -8,-18 -44,-18', fill: '#16222f' }, g);
+  el('path', { d: 'M -37 -18 h 22 v -4 h -4 v -5 h -5 v 5 h -4 v -5 h -5 v 5 h -4 z', fill: '#2b4059' }, g);
+  el('rect', { x: -30, y: 2, width: 8, height: 11, rx: 4, fill: '#ffd98a', opacity: 0.9 }, g);
+  el('rect', { x: -30, y: 22, width: 8, height: 11, rx: 4, fill: '#ffd98a', opacity: 0.55 }, g);
+
+  // lesser tower on the right
+  el('path', { d: 'M 20 46 L 22 6 L 38 6 L 40 46 Z', fill: '#1c2c3f', stroke: '#131e2c', 'stroke-width': 1.6 }, g);
+  el('polygon', { points: '30,-12 42,6 18,6', fill: '#131f2b' }, g);
+
+  [[-50, 18, 1], [8, -30, -1], [46, 24, -1]].forEach(([x, y, d]) => {
+    el('path', { d: 'M ' + x + ' ' + y + ' q ' + (5 * d) + ' -6 ' + (11 * d) + ' 0 q ' + (-5 * d) + ' -2 ' + (-11 * d) + ' 0 z', fill: '#0f1a26', opacity: 0.85 }, g);
+  });
+}
+
+function glasshouse(g, x, y, s) {
+  el('path', {
+    d: 'M ' + (x - 19 * s) + ' ' + (y + 15 * s) + ' L ' + (x - 19 * s) + ' ' + (y - 2 * s) +
+       ' Q ' + x + ' ' + (y - 24 * s) + ' ' + (x + 19 * s) + ' ' + (y - 2 * s) +
+       ' L ' + (x + 19 * s) + ' ' + (y + 15 * s) + ' Z',
+    fill: '#dcecca', opacity: 0.55, stroke: '#463c0c', 'stroke-width': 2,
+  }, g);
+  [[x, y + 15 * s, x, y - 20 * s], [x - 19 * s, y + 4 * s, x + 19 * s, y + 4 * s],
+   [x - 12 * s, y + 15 * s, x - 12 * s, y - 12 * s], [x + 12 * s, y + 15 * s, x + 12 * s, y - 12 * s],
+  ].forEach(([x1, y1, x2, y2]) => {
+    el('line', { x1, y1, x2, y2, stroke: '#463c0c', 'stroke-width': 1.3, opacity: 0.75 }, g);
+  });
+  el('rect', { x: x - 21 * s, y: y + 15 * s, width: 42 * s, height: 4 * s, fill: '#3d340a' }, g);
+}
+
+function paintGreenhouse(g) {
+  el('rect', { x: -62, y: 22, width: 124, height: 40, fill: '#6d5c13', opacity: 0.6 }, g);
+  glasshouse(g, -31, 2, 0.95);
+  glasshouse(g, 31, 2, 0.95);
+  [34, 46].forEach((y, i) => {
+    for (let x = -48 + (i % 2) * 9; x < 52; x += 17) {
+      el('path', { d: 'M ' + x + ' ' + y + ' q -6 -9 0 -13 q 6 4 0 13 z', fill: '#8cb336', opacity: 0.9 }, g);
+    }
+  });
+  [[-14, -34], [14, -34], [0, -44]].forEach(([x, y]) => {
+    el('path', { d: 'M ' + x + ' ' + y + ' q -5 -8 0 -11 q 5 3 0 11 z', fill: '#7fa32e', opacity: 0.7 }, g);
+  });
+}
+
+function paintGringotts(g) {
+  el('rect', { x: -62, y: 24, width: 124, height: 38, fill: '#5c5c67' }, g);
+  el('polygon', { points: '0,-46 40,-18 -40,-18', fill: '#b3b2bd', stroke: '#3b3b45', 'stroke-width': 2 }, g);
+  el('polygon', { points: '0,-40 32,-20 -32,-20', fill: '#96959f', opacity: 0.55 }, g);
+  el('rect', { x: -38, y: -18, width: 76, height: 7, fill: '#c6c5cf' }, g);
+  [-31, -18, 18, 31].forEach((x) => {
+    el('rect', { x: x - 5, y: -11, width: 10, height: 34, fill: '#bfbec9', stroke: '#484852', 'stroke-width': 1.2 }, g);
+    el('rect', { x: x - 6.5, y: -13, width: 13, height: 3, fill: '#d2d1db' }, g);
+  });
+  el('rect', { x: -40, y: 23, width: 80, height: 5, fill: '#a09fab' }, g);
+  el('rect', { x: -46, y: 28, width: 92, height: 5, fill: '#8b8a95' }, g);
+  [[-42, 44, 7], [-30, 48, 6], [40, 46, 7], [28, 50, 5]].forEach(([x, y, r]) => {
+    el('ellipse', { cx: x, cy: y, rx: r, ry: r * 0.42, fill: '#e6c85f', stroke: '#93761a', 'stroke-width': 1 }, g);
+  });
+}
+
+function paintAzkaban(g) {
+  el('rect', { x: -62, y: 16, width: 124, height: 46, fill: '#111124' }, g);
+  [24, 34, 44, 54].forEach((y, i) => {
+    el('path', {
+      d: 'M -62 ' + y + ' q 14 -6 28 0 t 28 0 t 28 0 t 28 0',
+      stroke: '#2b2b48', 'stroke-width': 2, fill: 'none', opacity: 0.75 - i * 0.14,
+    }, g);
+  });
+  el('path', { d: 'M -46 20 L -42 -30 L -20 -30 L -16 20 Z', fill: '#07070d', stroke: '#2b2b3a', 'stroke-width': 1.5 }, g);
+  el('path', { d: 'M -42 -30 h 22 v -5 h -5 v -5 h -5 v 5 h -3 v -5 h -4 v 5 h -5 z', fill: '#0c0c16' }, g);
+  el('rect', { x: -35, y: -14, width: 8, height: 11, rx: 3, fill: '#3d4a63', opacity: 0.75 }, g);
+  el('path', { d: 'M 22 22 L 26 -8 L 40 -8 L 44 22 Z', fill: '#06060b', stroke: '#26263a', 'stroke-width': 1.2 }, g);
+  el('path', { d: 'M -60 18 q 20 -8 42 -2 q 24 6 46 -4 l 0 12 l -88 0 z', fill: '#0a0a16', opacity: 0.8 }, g);
+}
+
+const TERRAIN_PAINTERS = {
+  forest: paintForest, quarry: paintQuarry, owlery: paintOwlery,
+  greenhouse: paintGreenhouse, gringotts: paintGringotts, azkaban: paintAzkaban,
+};
 
 // Fit the viewBox to whatever the board actually occupies, ports included.
 function boardExtent() {
@@ -102,29 +280,45 @@ function drawPorts(g) {
 function drawHexes(g, handlers) {
   state.board.hexes.forEach((hex) => {
     const t = TERRAINS[hex.terrain];
+    const pts = hexPoints(hex.cx, hex.cy);
     const grp = el('g', { class: 'hex', 'data-hex': hex.id }, g);
-    el('polygon', {
-      points: hexPoints(hex.cx, hex.cy),
-      fill: t.fill, stroke: '#0b0e1c', 'stroke-width': 3,
-    }, grp);
-    el('polygon', {
-      points: hexPoints(hex.cx, hex.cy),
-      fill: 'none', stroke: '#ffffff', 'stroke-width': 1, opacity: 0.08,
-    }, grp);
 
-    el('text', {
-      x: hex.cx, y: hex.cy - 22, 'text-anchor': 'middle', class: 'hex-glyph',
-    }, grp).textContent = t.glyph;
+    // 1. graded ground
+    el('polygon', { points: pts, fill: 'url(#terr-' + hex.terrain + ')' }, grp);
+
+    // 2. terrain artwork, clipped to the tile
+    const art = el('g', {
+      transform: 'translate(' + hex.cx.toFixed(2) + ',' + hex.cy.toFixed(2) + ')',
+      'clip-path': 'url(#hexClip)',
+    }, grp);
+    (TERRAIN_PAINTERS[hex.terrain] || (() => {}))(art);
+
+    // 3. inner bevel and a crisp outer edge
+    el('polygon', { points: pts, fill: 'none', stroke: '#ffffff', 'stroke-width': 2, opacity: 0.10 }, grp);
+    el('polygon', { points: pts, fill: 'none', stroke: '#070a16', 'stroke-width': 3.5 }, grp);
 
     if (hex.number !== null) {
       const hot = hex.number === 6 || hex.number === 8;
-      el('circle', { cx: hex.cx, cy: hex.cy + 16, r: 19, fill: '#f0e6cd', stroke: '#3a2f18', 'stroke-width': 2, filter: 'url(#drop)' }, grp);
+      el('circle', { cx: hex.cx, cy: hex.cy, r: 32, fill: 'url(#tokenHalo)' }, grp);
+      el('circle', { cx: hex.cx, cy: hex.cy, r: 20, fill: '#f3ead2', stroke: '#3a2f18', 'stroke-width': 2, filter: 'url(#drop)' }, grp);
+      el('circle', { cx: hex.cx, cy: hex.cy, r: 16, fill: 'none', stroke: '#cbb98a', 'stroke-width': 1 }, grp);
       el('text', {
-        x: hex.cx, y: hex.cy + 20, 'text-anchor': 'middle',
+        x: hex.cx, y: hex.cy + 3, 'text-anchor': 'middle',
         class: 'hex-num' + (hot ? ' hot' : ''),
       }, grp).textContent = hex.number;
-      const pipStr = '•'.repeat(hex.pips);
-      el('text', { x: hex.cx, y: hex.cy + 31, 'text-anchor': 'middle', class: 'hex-pips' + (hot ? ' hot' : '') }, grp).textContent = pipStr;
+      el('text', {
+        x: hex.cx, y: hex.cy + 14, 'text-anchor': 'middle',
+        class: 'hex-pips' + (hot ? ' hot' : ''),
+      }, grp).textContent = '•'.repeat(hex.pips);
+    }
+
+    // Ring the regions that just paid out, so a roll can be read off the board.
+    const rolled = state.dice ? state.dice[0] + state.dice[1] : null;
+    if (rolled !== null && hex.number === rolled && hex.id !== state.dementor) {
+      el('polygon', {
+        points: pts, fill: 'none', stroke: '#ffe082', 'stroke-width': 5,
+        class: 'hex-produced', 'stroke-linejoin': 'round',
+      }, grp);
     }
 
     const title = el('title', null, grp);
@@ -135,7 +329,7 @@ function drawHexes(g, handlers) {
     if (handlers.hexClickable && handlers.hexClickable(hex.id)) {
       grp.classList.add('clickable');
       el('polygon', {
-        points: hexPoints(hex.cx, hex.cy),
+        points: pts,
         fill: '#8fe3ff', opacity: 0.22, stroke: '#8fe3ff', 'stroke-width': 4, class: 'hex-target',
       }, grp);
       grp.addEventListener('click', () => handlers.onHex(hex.id));

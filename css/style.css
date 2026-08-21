@@ -55,7 +55,17 @@ main,header,#modal-root{position:relative;z-index:1;}
 }
 .tagline{margin:2px 0 0;font-size:13px;color:var(--muted);}
 .tagline strong{color:var(--gold-soft);}
-.topbar-actions{display:flex;gap:8px;}
+.topbar-actions{display:flex;gap:8px;align-items:center;}
+.pace-label{
+  display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);
+  letter-spacing:.06em;text-transform:uppercase;
+}
+.pace-label select{
+  background:rgba(255,255,255,.04);color:var(--text);border:1px solid var(--line);
+  border-radius:8px;padding:7px 8px;font-family:var(--body);font-size:13px;text-transform:none;
+  letter-spacing:normal;
+}
+.pace-label select:hover{border-color:var(--gold);}
 
 /* ---------- buttons ---------- */
 button{font-family:var(--body);font-size:14px;cursor:pointer;border-radius:8px;transition:.15s;}
@@ -88,19 +98,22 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 .sidebar{grid-area:sidebar;display:flex;flex-direction:column;gap:12px;position:sticky;top:14px;}
 .lower{grid-area:lower;display:flex;flex-direction:column;gap:12px;}
 
+.board-wrap{display:flex;justify-content:center;}
 #board{
   width:100%;height:auto;display:block;
+  /* keep the whole board on screen without scrolling */
+  max-height:calc(100vh - 132px);
   border-radius:16px;border:1px solid var(--line);
   box-shadow:0 18px 50px rgba(0,0,0,.55);
   background:#070a18;
   touch-action:manipulation;
 }
+@supports (height:100dvh){ #board{ max-height:calc(100dvh - 132px); } }
 
 /* ---------- svg pieces ---------- */
-.hex-glyph{font-size:26px;}
-.hex-num{font-family:var(--serif);font-size:19px;font-weight:700;fill:#2b2314;}
+.hex-num{font-family:var(--serif);font-size:21px;font-weight:700;fill:#2b2314;}
 .hex-num.hot{fill:#9b1414;}
-.hex-pips{font-size:11px;fill:#5b4a24;letter-spacing:1px;}
+.hex-pips{font-size:11px;fill:#6b5a30;letter-spacing:1.5px;}
 .hex-pips.hot{fill:#9b1414;}
 .port-any{font-family:var(--serif);font-size:15px;font-weight:700;fill:var(--gold-soft);}
 .port-icon{font-size:17px;}
@@ -109,6 +122,8 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 .hint:hover circle,.hint:hover line{opacity:1;}
 .vertex-hint{animation:pulse 1.5s ease-in-out infinite;}
 .hex.clickable{cursor:pointer;}
+.hex-produced{animation:harvest 1.6s ease-out infinite;}
+@keyframes harvest{0%{opacity:.9;}70%{opacity:.25;}100%{opacity:.9;}}
 .hex-target{animation:pulse 1.4s ease-in-out infinite;}
 @keyframes pulse{0%,100%{opacity:.35;}50%{opacity:.95;}}
 .dementor{animation:drift 4s ease-in-out infinite;}
@@ -279,6 +294,7 @@ button:disabled{opacity:.4;cursor:not-allowed;}
   #game{grid-template-columns:1fr;grid-template-areas:'board' 'sidebar' 'lower';}
   .sidebar{position:static;}
   .hand{grid-template-columns:repeat(5,1fr);}
+  #board{max-height:none;}
 }
 @media (max-width:520px){
   .topbar{flex-wrap:wrap;}

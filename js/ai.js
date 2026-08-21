@@ -1,33 +1,41 @@
 'use strict';
 /* ------------------------------------------------------------------
-   Heuristic opponents. Not a grandmaster — but it builds sensibly,
-   trades to unblock itself, and aims the Dementor at the leader.
+   Heuristic opponents at three skill levels.
+
+   easy   — grabs obvious pips, rarely trades to unblock itself, aims the
+            Dementor almost at random, and will happily take a bad deal.
+   medium — plays a sound game: builds in a sensible order, bank-trades to
+            reach the next piece, targets the leader with the Dementor.
+   hard   — values scarcity and ports, hunts the Longest Floo Network when
+            it is winnable, drives toward 10 points once it reaches 8, and
+            refuses trades that help whoever is ahead.
 ------------------------------------------------------------------ */
+
+const AI_LEVELS = {
+  easy: {
+    label: 'Easy', noise: 26, planTrades: true, tradeAfter: 8, skipChance: 0.15,
+    dementorSkill: 0.15, spellSkill: 0.35, scarcity: 0, portValue: 0,
+    endgame: false, chaseRoad: false, tradeGenerosity: 1.6,
+  },
+  medium: {
+    label: 'Medium', noise: 7, planTrades: true, tradeAfter: 0, skipChance: 0.08,
+    dementorSkill: 0.8, spellSkill: 0.85, scarcity: 8, portValue: 4,
+    endgame: false, chaseRoad: false, tradeGenerosity: 1.0,
+  },
+  hard: {
+    label: 'Hard', noise: 1.5, planTrades: true, tradeAfter: 0, skipChance: 0,
+    dementorSkill: 1, spellSkill: 1, scarcity: 14, portValue: 7,
+    endgame: true, chaseRoad: true, tradeGenerosity: 0.55,
+  },
+};
 
 const AI = (function () {
 
-  function vertexValue(vk, playerId) {
-    const v = state.board.vertices[vk];
-    let pips = 0;
-    const kinds = new Set();
-    v.hexes.forEach((hid) => {
-      const h = state.board.hexes[hid];
-      if (!h.res) return;
-      pips += h.pips;
-      kinds.add(h.res);
-    });
-    let score = pips * 10 + kinds.size * 6;
-    // Value scarce resources in this player's portfolio.
-    const owned = resourceReach(playerId);
-    v.hexes.forEach((hid) => {
-      const h = state.board.hexes[hid];
-      if (h.res && !owned.has(h.res)) score += 8;
-    });
-    if (v.port === 'any') score += 4;
-    else if (v.port) score += 3;
-    return score;
+  function cfg(playerId) {
+    return AI_LEVELS[state.players[playerId].level] || AI_LEVELS.medium;
   }
 
+  /* ---------- how good is a junction ---------- */
   function resourceReach(playerId) {
     const set = new Set();
     Object.keys(state.buildings).forEach((vk) => {
@@ -40,59 +48,100 @@ const AI = (function () {
     return set;
   }
 
-  function bestSetupVertex(playerId) {
-    const spots = validCottageSpots(playerId, true);
-    let best = null, bestScore = -1;
-    spots.forEach((vk) => {
-      const s = vertexValue(vk, playerId) + Math.random() * 3;
-      if (s > bestScore) { bestScore = s; best = vk; }
+  // Pips of each resource still unclaimed across the whole board — a resource
+  // nobody can produce is worth far more than raw probability suggests.
+  function boardScarcity() {
+    const total = {};
+    RES_KEYS.forEach((k) => { total[k] = 0; });
+    state.board.hexes.forEach((h) => { if (h.res) total[h.res] += h.pips; });
+    return total;
+  }
+
+  function vertexValue(vk, playerId) {
+    const c = cfg(playerId);
+    const v = state.board.vertices[vk];
+    let pips = 0;
+    const kinds = new Set();
+    v.hexes.forEach((hid) => {
+      const h = state.board.hexes[hid];
+      if (!h.res) return;
+      pips += h.pips;
+      kinds.add(h.res);
+    });
+
+    let score = pips * 10 + kinds.size * 6;
+    if (c.scarcity) {
+      const owned = resourceReach(playerId);
+      const supply = boardScarcity();
+      v.hexes.forEach((hid) => {
+        const h = state.board.hexes[hid];
+        if (!h.res) return;
+        if (!owned.has(h.res)) score += c.scarcity;
+        // rarer on the board => more valuable to hold
+        score += Math.max(0, (14 - supply[h.res])) * (c.scarcity / 14);
+      });
+    }
+    if (c.portValue && v.port) {
+      score += v.port === 'any' ? c.portValue * 0.6 : c.portValue;
+      // a 2:1 port is only worth it if we actually produce that resource
+      if (v.port !== 'any' && !resourceReach(playerId).has(v.port)) score -= c.portValue * 0.5;
+    }
+    return score;
+  }
+
+  function pickBest(items, scoreFn, noise) {
+    let best = null, bestScore = -Infinity;
+    items.forEach((it) => {
+      const s = scoreFn(it) + Math.random() * noise;
+      if (s > bestScore) { bestScore = s; best = it; }
     });
     return best;
   }
 
+  /* ---------- opening placement ---------- */
+  function bestSetupVertex(playerId) {
+    const c = cfg(playerId);
+    return pickBest(validCottageSpots(playerId, true), (vk) => vertexValue(vk, playerId), c.noise * 1.5);
+  }
+
   function bestSetupRoad(playerId, fromVertex) {
-    const options = validRoadSpots(playerId, fromVertex);
-    let best = null, bestScore = -1;
-    options.forEach((ek) => {
+    const c = cfg(playerId);
+    return pickBest(validRoadSpots(playerId, fromVertex), (ek) => {
       const e = state.board.edges[ek];
       const far = e.a === fromVertex ? e.b : e.a;
-      // Look one step beyond for a future cottage site.
       let score = 0;
       state.board.vertices[far].adj.forEach((nb) => {
         if (vertexIsFree(nb)) score = Math.max(score, vertexValue(nb, playerId));
       });
-      score += Math.random() * 5;
-      if (score > bestScore) { bestScore = score; best = ek; }
-    });
-    return best;
+      return score;
+    }, c.noise);
   }
 
   /* ---------- expansion targets ---------- */
   function bestCottageSpot(playerId) {
-    const spots = validCottageSpots(playerId, false);
-    let best = null, bestScore = -1;
-    spots.forEach((vk) => {
-      const s = vertexValue(vk, playerId);
-      if (s > bestScore) { bestScore = s; best = vk; }
-    });
-    return best;
+    const c = cfg(playerId);
+    return pickBest(validCottageSpots(playerId, false), (vk) => vertexValue(vk, playerId), c.noise);
   }
 
   function bestCastleSpot(playerId) {
-    const spots = validCastleSpots(playerId);
-    let best = null, bestScore = -1;
-    spots.forEach((vk) => {
-      const s = vertexValue(vk, playerId);
-      if (s > bestScore) { bestScore = s; best = vk; }
-    });
-    return best;
+    const c = cfg(playerId);
+    return pickBest(validCastleSpots(playerId), (vk) => vertexValue(vk, playerId), c.noise);
   }
 
-  // A road that opens the best new cottage site.
+  // Would laying this road take (or extend) the Longest Floo Network?
+  function roadClaimsLongest(playerId, ek) {
+    const holder = state.longestRoad.owner;
+    if (holder === playerId) return false;
+    state.roads[ek] = { owner: playerId };
+    const len = longestRoadFor(playerId);
+    delete state.roads[ek];
+    return len >= 5 && len > state.longestRoad.length;
+  }
+
   function bestRoadSpot(playerId) {
+    const c = cfg(playerId);
     const options = validRoadSpots(playerId);
-    let best = null, bestScore = -1;
-    options.forEach((ek) => {
+    return pickBest(options, (ek) => {
       const e = state.board.edges[ek];
       let score = 1;
       [e.a, e.b].forEach((v) => {
@@ -101,12 +150,12 @@ const AI = (function () {
           if (vertexIsFree(nb)) score = Math.max(score, vertexValue(nb, playerId) * 0.55);
         });
       });
-      if (score > bestScore) { bestScore = score; best = ek; }
-    });
-    return best;
+      if (c.chaseRoad && roadClaimsLongest(playerId, ek)) score += 160;
+      return score;
+    }, c.noise);
   }
 
-  /* ---------- resource shortfall + bank trades ---------- */
+  /* ---------- bank trading ---------- */
   function missingFor(p, cost) {
     const need = {};
     let total = 0;
@@ -117,42 +166,79 @@ const AI = (function () {
     return { need, total };
   }
 
-  function trySpendSurplus(p, cost) {
+  // Work out the whole sequence of bank trades on paper first, so we never
+  // spend cards on a conversion that cannot actually finish.
+  function planBankTrades(p, cost) {
     const { need, total } = missingFor(p, cost);
-    if (total === 0) return true;
-    for (const want of Object.keys(need)) {
-      for (let i = 0; i < need[want]; i++) {
-        const donor = RES_KEYS
-          .filter((k) => !cost[k] || p.res[k] - (cost[k] || 0) >= tradeRate(p, k))
-          .filter((k) => p.res[k] >= tradeRate(p, k))
-          .sort((a, b) => (p.res[b] / tradeRate(p, b)) - (p.res[a] / tradeRate(p, a)))[0];
-        if (!donor) return false;
-        if (!bankTrade(p.id, donor, want)) return false;
-      }
+    if (total === 0) return [];
+    const res = { ...p.res };
+    const bank = { ...state.bank };
+    const trades = [];
+    const wants = [];
+    Object.keys(need).forEach((k) => { for (let i = 0; i < need[k]; i++) wants.push(k); });
+
+    for (const want of wants) {
+      if (bank[want] < 1) return null;
+      let donor = null, bestRatio = 0;
+      RES_KEYS.forEach((k) => {
+        if (k === want) return;
+        const rate = tradeRate(p, k);
+        const surplus = res[k] - (cost[k] || 0);
+        const ratio = surplus / rate;
+        if (surplus >= rate && ratio > bestRatio) { bestRatio = ratio; donor = k; }
+      });
+      if (!donor) return null;
+      res[donor] -= tradeRate(p, donor);
+      res[want] += 1;
+      bank[want] -= 1;
+      trades.push([donor, want]);
     }
+    return trades;
+  }
+
+  function affordVia(p, cost, allowTrades) {
+    if (canAfford(p, cost)) return true;
+    if (!allowTrades) return false;
+    const plan = planBankTrades(p, cost);
+    if (!plan) return false;
+    plan.forEach(([give, get]) => bankTrade(p.id, give, get));
     return canAfford(p, cost);
   }
 
   /* ---------- the Dementor ---------- */
   function bestDementorHex(playerId) {
-    const leaderVP = {};
-    state.players.forEach((p) => { leaderVP[p.id] = victoryPoints(p.id, false); });
-    let best = null, bestScore = -Infinity;
-    state.board.hexes.forEach((hex) => {
-      if (hex.id === state.dementor) return;
+    const c = cfg(playerId);
+    const options = state.board.hexes.filter((h) => h.id !== state.dementor);
+
+    // Unskilled players just shove it somewhere that is not their own land.
+    if (Math.random() > c.dementorSkill) {
+      const harmless = options.filter((h) =>
+        h.corners.every((vk) => !state.buildings[vk] || state.buildings[vk].owner !== playerId));
+      const pool = harmless.length ? harmless : options;
+      return pool[Math.floor(Math.random() * pool.length)].id;
+    }
+
+    const vp = {};
+    state.players.forEach((p) => { vp[p.id] = victoryPoints(p.id, false); });
+    const leadVP = Math.max(...state.players.map((p) => vp[p.id]));
+
+    return pickBest(options, (hex) => {
       let score = 0, hitsSelf = false;
       hex.corners.forEach((vk) => {
         const b = state.buildings[vk];
         if (!b) return;
         const weight = (b.type === 'castle' ? 2 : 1) * hex.pips;
         if (b.owner === playerId) { hitsSelf = true; score -= weight * 4; }
-        else score += weight * (1 + leaderVP[b.owner] * 0.25);
+        else {
+          score += weight * (1 + vp[b.owner] * 0.3);
+          // squeeze the leader hardest, and prefer someone we can rob
+          if (vp[b.owner] === leadVP) score += weight * 0.8;
+          if (totalCards(state.players[b.owner]) > 0) score += 3;
+        }
       });
-      if (hitsSelf) score -= 10;
-      score += Math.random();
-      if (score > bestScore) { bestScore = score; best = hex.id; }
-    });
-    return best === null ? (state.dementor + 1) % state.board.hexes.length : best;
+      if (hitsSelf) score -= 12;
+      return score;
+    }, 1).id;
   }
 
   function richestTarget(targets) {
@@ -161,16 +247,19 @@ const AI = (function () {
 
   /* ---------- spells ---------- */
   function considerSpell(p) {
+    const c = cfg(p.id);
     if (p.playedSpellThisTurn || !p.spells.length) return null;
+    if (Math.random() > c.spellSkill) return null;
+
     if (p.spells.includes('imperio')) {
       const best = RES_KEYS
         .map((k) => ({ k, n: state.players.reduce((s, o) => s + (o.id === p.id ? 0 : o.res[k]), 0) }))
         .sort((a, b) => b.n - a.n)[0];
-      if (best.n >= 3) return { card: 'imperio', opts: { res: best.k } };
+      const bar = c.endgame ? 3 : 4;
+      if (best.n >= bar) return { card: 'imperio', opts: { res: best.k } };
     }
     if (p.spells.includes('accio')) {
-      const goal = currentGoal(p);
-      const { need } = missingFor(p, COSTS[goal]);
+      const { need } = missingFor(p, COSTS[currentGoal(p)]);
       const keys = Object.keys(need);
       if (keys.length) {
         const a = keys[0];
@@ -184,7 +273,8 @@ const AI = (function () {
     if (p.spells.includes('auror')) {
       const dem = state.board.hexes[state.dementor];
       const hurtsMe = dem.corners.some((vk) => state.buildings[vk] && state.buildings[vk].owner === p.id);
-      if (hurtsMe || p.aurorsPlayed >= state.largestArmy.size) return { card: 'auror', opts: {} };
+      const wantsArmy = p.aurorsPlayed >= state.largestArmy.size && state.largestArmy.owner !== p.id;
+      if (hurtsMe || wantsArmy) return { card: 'auror', opts: {} };
     }
     return null;
   }
@@ -196,53 +286,75 @@ const AI = (function () {
     return 'spell';
   }
 
-  /* ---------- one build step; returns an action or null ---------- */
+  /* ---------- choose one action ---------- */
   function nextBuild(p) {
-    // 1. Castles first — they double production and are 2 VP.
+    const c = cfg(p.id);
+    if (c.skipChance && Math.random() < c.skipChance) return null;
+
+    const vp = victoryPoints(p.id, true);
+    const closing = c.endgame && vp >= VP_TO_WIN - 2;
+    // Weaker players only think to visit the bank once their hand is bulging.
+    const mayTrade = c.planTrades && totalCards(p) >= (c.tradeAfter || 0);
+
+    // Castles: two points and double production.
     if (p.pieces.castle > 0) {
       const spot = bestCastleSpot(p.id);
-      if (spot && (canAfford(p, COSTS.castle) || trySpendSurplus(p, COSTS.castle))) {
-        return { type: 'castle', target: spot };
-      }
+      if (spot && affordVia(p, COSTS.castle, mayTrade)) return { type: 'castle', target: spot };
     }
-    // 2. Cottages.
+    // Cottages.
     if (p.pieces.cottage > 0) {
       const spot = bestCottageSpot(p.id);
-      if (spot && (canAfford(p, COSTS.cottage) || trySpendSurplus(p, COSTS.cottage))) {
-        return { type: 'cottage', target: spot };
-      }
+      if (spot && affordVia(p, COSTS.cottage, mayTrade)) return { type: 'cottage', target: spot };
     }
-    // 3. A road toward the next site.
-    if (p.pieces.road > 0 && p.pieces.cottage > 0) {
+    // A road — either toward the next site, or to seize the Longest Floo Network.
+    if (p.pieces.road > 0) {
       const spot = bestRoadSpot(p.id);
-      if (spot && (canAfford(p, COSTS.road) || (totalCards(p) > 5 && trySpendSurplus(p, COSTS.road)))) {
-        return { type: 'road', target: spot };
+      const claims = spot && c.chaseRoad && roadClaimsLongest(p.id, spot);
+      const worthIt = claims || (p.pieces.cottage > 0 && !closing);
+      if (spot && worthIt) {
+        const allow = mayTrade && (claims || totalCards(p) > 5);
+        if (affordVia(p, COSTS.road, allow)) return { type: 'road', target: spot };
       }
     }
-    // 4. Otherwise bank spare cards into Spell Scrolls.
-    if (state.spellDeck.length && (canAfford(p, COSTS.spell) || (totalCards(p) >= 8 && trySpendSurplus(p, COSTS.spell)))) {
-      return { type: 'spell' };
+    // Otherwise bank spare cards into Spell Scrolls — and always do so when a
+    // hidden victory point could end the game.
+    if (state.spellDeck.length) {
+      const allow = mayTrade && (closing || totalCards(p) >= 8);
+      if (affordVia(p, COSTS.spell, allow)) return { type: 'spell' };
     }
     return null;
   }
 
+  /* ---------- responding to an offer ---------- */
   function evaluateTradeOffer(playerId, give, get) {
-    // `give` is what the proposer gives away (AI receives it).
+    const c = cfg(playerId);
     const p = state.players[playerId];
     if (!canPayBundle(p, get)) return false;
+
     const incoming = RES_KEYS.reduce((s, k) => s + (give[k] || 0), 0);
     const outgoing = RES_KEYS.reduce((s, k) => s + (get[k] || 0), 0);
-    if (outgoing > incoming) return false;
+    if (outgoing > incoming * c.tradeGenerosity) return false;
+
+    // Never hand a win to whoever is already ahead.
+    if (c.endgame) {
+      const leader = state.players.reduce((a, b) =>
+        victoryPoints(b.id, false) > victoryPoints(a.id, false) ? b : a);
+      if (leader.id === state.current && victoryPoints(leader.id, false) >= VP_TO_WIN - 2) return false;
+    }
+
     const goal = COSTS[currentGoal(p)];
     const { need } = missingFor(p, goal);
     const helps = RES_KEYS.some((k) => (give[k] || 0) > 0 && need[k]);
     const costsCritical = RES_KEYS.some((k) => (get[k] || 0) > 0 && p.res[k] - get[k] < (goal[k] || 0));
+
+    if (c.tradeGenerosity > 1.2) return !costsCritical || incoming > outgoing;  // easy: agreeable
     return helps && !costsCritical;
   }
 
   return {
     bestSetupVertex, bestSetupRoad, bestDementorHex, richestTarget,
-    bestCottageSpot, bestCastleSpot, bestRoadSpot,
+    bestCottageSpot, bestCastleSpot, bestRoadSpot, roadClaimsLongest,
     considerSpell, nextBuild, evaluateTradeOffer, currentGoal, vertexValue,
+    planBankTrades, cfg,
   };
 })();

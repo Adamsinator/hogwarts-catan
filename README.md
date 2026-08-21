@@ -5,8 +5,21 @@ no dependencies, no backend. Open `index.html` or serve the folder.
 
 ## Playing
 
-Two to four houses compete — any mix of humans (hot-seat) and AI. First to **10 victory points**
-wins the House Cup.
+Two to four houses compete — any mix of humans (hot-seat) and AI at three skill levels. First to
+**10 victory points** wins the House Cup. A **Pace** control sets how long AI opponents pause
+between actions.
+
+### AI difficulty
+
+| Level | Behaviour | Win rate* |
+|---|---|---|
+| Easy | Chases raw pips, rarely visits the bank, aims the Dementor almost at random, accepts poor trades | 20% |
+| Medium | Sound play: sensible build order, bank-trades toward its next piece, targets the leader | 34% |
+| Hard | Weighs scarcity and ports, hunts the Longest Floo Network, drives for 10 once it reaches 8, refuses trades that help the leader | 46% |
+
+\* Measured over 150 three-handed games with one AI of each level and rotated seating.
+The levels differ in strategy, not just strength — Hard takes the Longest Floo Network in 62% of
+games against 12% for Easy.
 
 | Catan | Hogsmeade |
 |---|---|
@@ -36,7 +49,15 @@ Standard Catan, including the fiddly bits:
 - Spell Scrolls are unplayable on the turn they're drawn; one per turn.
 - Longest Floo Network (5+) and Dumbledore's Army (3+) are held until strictly beaten.
 
-Games autosave to `localStorage` and offer to resume on reload.
+Games autosave to `localStorage` and offer to resume on reload. Regions that just paid out are
+ringed on the board so a roll can be read at a glance.
+
+## Testing
+
+The rules engine is driven entirely through globals (`state`, `createGame`, `rollDice`, `AI.*`),
+so a full AI-vs-AI game can be played from the browser console without touching the DOM. That is
+how the ruleset is regression-tested: batches of games are checked for resource conservation,
+non-negative hands, the distance rule, piece limits, and a legitimate 10-point win.
 
 ## Files
 
@@ -45,7 +66,7 @@ index.html      markup shell
 css/style.css   all styling
 js/board.js     hex geometry, terrain, tokens, ports
 js/game.js      state and rules
-js/ai.js        heuristic opponents
+js/ai.js        heuristic opponents (easy / medium / hard)
 js/render.js    SVG board rendering
 js/ui.js        panels, modals, turn scheduler
 ```

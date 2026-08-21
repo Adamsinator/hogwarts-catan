@@ -68,6 +68,7 @@ function createGame(playerConfigs, seed) {
     ink: HOUSES.find((h) => h.key === cfg.house).ink,
     crest: HOUSES.find((h) => h.key === cfg.house).crest,
     isAI: cfg.isAI,
+    level: cfg.level || 'medium',
     res: emptyRes(),
     spells: [],           // playable
     freshSpells: [],      // bought this turn
@@ -112,7 +113,8 @@ function createGame(playerConfigs, seed) {
     turnCount: 0,
   };
 
-  logMsg('The Sorting is complete. ' + players.map((p) => p.name).join(', ') + ' take their places.');
+  const roster = players.map((p) => p.name + (p.isAI ? ' (' + AI_LEVELS[p.level].label + ')' : '')).join(', ');
+  logMsg('The Sorting is complete. ' + roster + ' take their places.');
   logMsg(players[state.current].name + ' places the first Cottage.');
   return state;
 }

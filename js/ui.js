@@ -4,9 +4,24 @@
 ------------------------------------------------------------------ */
 
 const SAVE_KEY = 'hogsmeade.save.v2';
+
+// How long AI opponents pause between actions, so their turns can be followed.
+const PACE_PRESETS = {
+  brisk:    { setup: 380, roll: 500,  action: 450, afterRoll: 750,  discard: 400, steal: 450 },
+  normal:   { setup: 750, roll: 900,  action: 850, afterRoll: 1250, discard: 750, steal: 850 },
+  relaxed:  { setup: 1200, roll: 1500, action: 1400, afterRoll: 2200, discard: 1200, steal: 1400 },
+};
+const PACE_KEY = 'hogsmeade.pace';
+let PACE = PACE_PRESETS[localStorage.getItem(PACE_KEY)] || PACE_PRESETS.normal;
+
+function setPace(name) {
+  PACE = PACE_PRESETS[name] || PACE_PRESETS.normal;
+  try { localStorage.setItem(PACE_KEY, name); } catch (e) { /* ignore */ }
+}
 const $ = (id) => document.getElementById(id);
 let aiTimer = null;
 let aiActions = 0;
+let lastWasRoll = false;
 
 /* ================= modal plumbing ================= */
 function modal(html, opts) {
@@ -209,7 +224,7 @@ function renderPlayers() {
     card.innerHTML =
       '<div class="top"><span class="crest">' + p.crest + '</span>' +
       '<span class="nm">' + p.name + '</span>' +
-      (p.isAI ? '<span class="ai">AI</span>' : '') +
+      (p.isAI ? '<span class="ai">' + AI_LEVELS[p.level].label + '</span>' : '') +
       '<span class="pvp" title="Public victory points">' + victoryPoints(p.id, false) + '</span></div>' +
       '<div class="stats">' +
       '<span>🃏 ' + totalCards(p) + ' cards</span>' +
@@ -540,7 +555,7 @@ function tick() {
   if (state.phase === 'discard') {
     const id = state.discardQueue[0];
     if (state.players[id].isAI) {
-      aiTimer = setTimeout(() => { autoDiscard(id); tick(); }, 450);
+      aiTimer = setTimeout(() => { autoDiscard(id); tick(); }, PACE.discard);
     } else {
       showDiscardModal(id);
     }
@@ -554,7 +569,7 @@ function tick() {
         stealFrom(AI.richestTarget(state.stealTargets), p.id);
         state.phase = state.returnPhase || 'main';
         tick();
-      }, 450);
+      }, PACE.steal);
     } else {
       showStealModal();
     }
@@ -562,7 +577,11 @@ function tick() {
   }
 
   if (currentPlayer().isAI) {
-    aiTimer = setTimeout(aiStep, state.phase === 'setup' ? 450 : 650);
+    let delay = state.phase === 'setup' ? PACE.setup : PACE.action;
+    if (state.phase === 'roll') delay = PACE.roll;
+    // linger after a harvest so the log can be read before the next action
+    if (state.phase === 'main' && state.dice && !state.pending) delay = Math.max(delay, lastWasRoll ? PACE.afterRoll : PACE.action);
+    aiTimer = setTimeout(aiStep, delay);
   }
 }
 
@@ -590,6 +609,7 @@ function aiStep() {
     const sp = AI.considerSpell(p);
     if (sp && sp.card === 'auror') { playSpell(p.id, 'auror', sp.opts); return tick(); }
     rollDice();
+    lastWasRoll = true;
     return tick();
   }
 
@@ -599,6 +619,9 @@ function aiStep() {
   }
 
   if (state.phase === 'main') {
+    const wasRoll = lastWasRoll;
+    lastWasRoll = false;
+    if (wasRoll) return tick();   // one beat to read the harvest
     if (aiActions++ > 24) { endTurn(); return tick(); }
 
     if (state.pending && state.pending.kind === 'road') {
@@ -660,15 +683,18 @@ function showVictory() {
 function showSetup() {
   if (aiTimer) clearTimeout(aiTimer);
   const rows = HOUSES.map((h, i) => {
-    const def = i === 0 ? 'human' : (i < 3 ? 'ai' : 'off');
+    const def = i === 0 ? 'human' : (i < 3 ? 'ai:medium' : 'off');
+    const opt = (v, label) => '<option value="' + v + '"' + (def === v ? ' selected' : '') + '>' + label + '</option>';
     return '<div class="setup-row" data-house="' + h.key + '">' +
       '<span class="crest">' + h.crest + '</span>' +
       '<span class="hname">' + h.name + '</span>' +
       '<input type="text" value="' + h.name + '" maxlength="14" aria-label="Name">' +
       '<select aria-label="Player type">' +
-      '<option value="human"' + (def === 'human' ? ' selected' : '') + '>Human</option>' +
-      '<option value="ai"' + (def === 'ai' ? ' selected' : '') + '>Wizard AI</option>' +
-      '<option value="off"' + (def === 'off' ? ' selected' : '') + '>Not playing</option>' +
+      opt('human', 'Human') +
+      opt('ai:easy', 'AI — Easy') +
+      opt('ai:medium', 'AI — Medium') +
+      opt('ai:hard', 'AI — Hard') +
+      opt('off', 'Not playing') +
       '</select></div>';
   }).join('');
 
@@ -691,7 +717,12 @@ function showSetup() {
 
     if (cfgs.length < 2) { alert('At least two houses must play.'); return; }
     m.close();
-    createGame(cfgs.map((c) => ({ house: c.house, name: c.name, isAI: c.type === 'ai' })));
+    createGame(cfgs.map((c) => ({
+      house: c.house,
+      name: c.name,
+      isAI: c.type.startsWith('ai'),
+      level: c.type.split(':')[1] || 'medium',
+    })));
     tick();
   });
 }
@@ -786,6 +817,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-bank').addEventListener('click', showBankTrade);
   $('btn-offer').addEventListener('click', showOfferTrade);
   $('btn-rules').addEventListener('click', showRules);
+
+  const paceSel = $('pace');
+  paceSel.value = localStorage.getItem(PACE_KEY) || 'normal';
+  paceSel.addEventListener('change', () => setPace(paceSel.value));
   $('btn-new').addEventListener('click', () => {
     if (state && state.phase !== 'over' && !confirm('Abandon the current game?')) return;
     closeAllModals();
