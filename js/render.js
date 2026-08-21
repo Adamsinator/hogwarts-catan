@@ -240,7 +240,12 @@ function renderBoard(svg, handlers) {
   svg.setAttribute('viewBox', [-ext.w, -ext.h, ext.w * 2, ext.h * 2].join(' '));
   renderDefs(svg);
 
-  el('rect', { x: -ext.w, y: -ext.h, width: ext.w * 2, height: ext.h * 2, fill: 'url(#seaGrad)' }, svg);
+  // The frame is drawn inside the SVG rather than applied to the element, so it
+  // always hugs the artwork however the element is letterboxed in its cell.
+  el('rect', {
+    x: -ext.w + 2, y: -ext.h + 2, width: ext.w * 2 - 4, height: ext.h * 2 - 4,
+    rx: 18, fill: 'url(#seaGrad)', stroke: 'rgba(201,162,39,0.34)', 'stroke-width': 2,
+  }, svg);
 
   const layers = {};
   ['ports', 'hexes', 'roads', 'buildings', 'hints', 'overlay'].forEach((n) => {

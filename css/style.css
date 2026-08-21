@@ -82,33 +82,77 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 }
 .primary:hover:not(:disabled){filter:brightness(1.1);}
 .wide{width:100%;}
-.end-turn{margin-top:2px;font-family:var(--serif);}
+.end-turn{
+  margin-top:2px;font-family:var(--serif);flex:none;
+  position:sticky;bottom:0;z-index:2;
+  box-shadow:0 -10px 18px rgba(10,12,22,.85);
+}
 
 /* ---------- layout ---------- */
+/* On a desktop the whole game fits one screen: nothing scrolls but the log. */
+@media (min-width:1001px){
+  body{height:100vh;overflow:hidden;display:flex;flex-direction:column;}
+  .topbar{flex:none;}
+  #game{flex:1;min-height:0;overflow:hidden;}
+}
+
 #game[hidden]{display:none;}
 #game{
   display:grid;
-  grid-template-columns:minmax(0,1fr) 340px;
-  grid-template-areas:'board sidebar' 'lower sidebar';
-  gap:16px;
-  padding:16px clamp(12px,3vw,28px) 28px;
-  align-items:start;
+  gap:14px;
+  padding:14px clamp(12px,2.4vw,26px) 16px;
+  align-items:stretch;
+  /* 1001-1239px: board beside the sidebar, roster and log side by side under
+     them, so neither steals much height from the board. */
+  grid-template-columns:minmax(0,1fr) 344px;
+  grid-template-rows:minmax(0,1fr) auto;
+  grid-template-areas:
+    'board  sidebar'
+    'roster chronicle';
 }
-.board-wrap{grid-area:board;position:relative;}
-.sidebar{grid-area:sidebar;display:flex;flex-direction:column;gap:12px;position:sticky;top:14px;}
-.lower{grid-area:lower;display:flex;flex-direction:column;gap:12px;}
 
-.board-wrap{display:flex;justify-content:center;}
+@media (min-width:1001px) and (max-width:1239px){
+  #game .players>*{flex:1 1 148px;}
+  .chronicle{max-height:132px;}
+}
+
+.board-wrap{
+  grid-area:board;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  min-width:0;min-height:0;
+}
+.sidebar{
+  grid-area:sidebar;display:flex;flex-direction:column;gap:10px;
+  min-height:0;overflow-y:auto;padding-bottom:2px;
+}
+.roster{grid-area:roster;min-width:0;}
+.chronicle{grid-area:chronicle;min-height:0;display:flex;flex-direction:column;max-height:170px;}
+
+/* Wide screens gain a left gutter for the roster and the chronicle, which lets
+   the board grow into space that would otherwise sit empty either side of it. */
+@media (min-width:1240px){
+  #game{
+    grid-template-columns:206px minmax(0,1fr) 344px;
+    grid-template-rows:auto minmax(0,1fr);
+    grid-template-areas:
+      'roster    board sidebar'
+      'chronicle board sidebar';
+  }
+  /* Higher specificity than the wrap-mode basis below: in a column the
+     flex-basis would otherwise be read as a height and inflate the row. */
+  #game #players{flex-direction:column;flex-wrap:nowrap;}
+  #game .players>*{flex:0 0 auto;}
+  .chronicle{max-height:none;}
+}
+
+/* Absolutely positioned so the board can never inflate its own grid row. */
 #board{
-  width:100%;height:auto;display:block;
-  /* keep the whole board on screen without scrolling */
-  max-height:calc(100vh - 132px);
-  border-radius:16px;border:1px solid var(--line);
-  box-shadow:0 18px 50px rgba(0,0,0,.55);
-  background:#070a18;
+  position:absolute;inset:0;
+  display:block;width:100%;height:100%;
+  background:transparent;border:0;
+  filter:drop-shadow(0 16px 34px rgba(0,0,0,.55));
   touch-action:manipulation;
 }
-@supports (height:100dvh){ #board{ max-height:calc(100dvh - 132px); } }
 
 /* ---------- svg pieces ---------- */
 .hex-num{font-family:var(--serif);font-size:21px;font-weight:700;fill:#2b2314;}
@@ -208,7 +252,8 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 .trade-row{display:flex;flex-direction:column;gap:7px;}
 
 /* ---------- players ---------- */
-.players{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;}
+.players{display:flex;flex-wrap:wrap;gap:10px;}
+.players>*{flex:1 1 186px;}
 .pcard{
   background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--pc);
   border-radius:11px;padding:10px 12px;
@@ -226,7 +271,7 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 }
 
 /* ---------- log ---------- */
-.log-panel{max-height:240px;display:flex;flex-direction:column;}
+.log-panel{display:flex;flex-direction:column;min-height:0;}
 .log{overflow-y:auto;font-size:13px;line-height:1.5;padding-right:6px;}
 .log div{padding:3px 0;border-bottom:1px solid rgba(255,255,255,.05);color:#cfd3e8;}
 .log .roll{color:var(--gold-soft);}
@@ -291,10 +336,15 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 
 /* ---------- responsive ---------- */
 @media (max-width:1000px){
-  #game{grid-template-columns:1fr;grid-template-areas:'board' 'sidebar' 'lower';}
-  .sidebar{position:static;}
-  .hand{grid-template-columns:repeat(5,1fr);}
-  #board{max-height:none;}
+  #game{
+    grid-template-columns:1fr;
+    grid-template-rows:auto auto auto auto;
+    grid-template-areas:'board' 'sidebar' 'roster' 'chronicle';
+  }
+  .sidebar{overflow:visible;}
+  .end-turn{position:static;box-shadow:none;}
+  .chronicle{max-height:260px;}
+  #board{position:static;width:100%;height:auto;}
 }
 @media (max-width:520px){
   .topbar{flex-wrap:wrap;}
