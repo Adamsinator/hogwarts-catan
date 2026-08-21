@@ -75,6 +75,7 @@ function createGame(playerConfigs, seed) {
     merlinTitles: [],
     aurorsPlayed: 0,
     playedSpellThisTurn: false,
+    offeredThisTurn: false,
     pieces: { road: 15, cottage: 5, castle: 4 },
     ports: [],
   }));
@@ -86,8 +87,12 @@ function createGame(playerConfigs, seed) {
   const bank = emptyRes();
   RES_KEYS.forEach((k) => { bank[k] = BANK_PER_RESOURCE; });
 
+  const rollTally = {};
+  for (let n = 2; n <= 12; n++) rollTally[n] = 0;
+
   state = {
     seed: usedSeed,
+    configs: playerConfigs,   // kept so a rematch can reuse board + houses
     board,
     players,
     bank,
@@ -109,6 +114,8 @@ function createGame(playerConfigs, seed) {
     largestArmy: { owner: null, size: 0 },
     trade: null,
     winner: null,
+    offer: null,              // a trade an AI has put to another house
+    stats: { rolls: rollTally, harvested: players.map(() => 0), sevens: 0 },
     log: [],
     turnCount: 0,
   };
@@ -139,6 +146,31 @@ function grant(p, resKey, n) {
   p.res[resKey] += avail;
   state.bank[resKey] -= avail;
   return avail;
+}
+
+/* ---------- junction yield ---------- */
+function vertexYield(vk) {
+  const v = state.board.vertices[vk];
+  let pips = 0;
+  const hexes = [];
+  v.hexes.forEach((hid) => {
+    const h = state.board.hexes[hid];
+    if (!h.res) return;
+    pips += h.pips;
+    hexes.push(h);
+  });
+  return { pips, hexes, port: v.port };
+}
+
+function vertexYieldText(vk) {
+  const y = vertexYield(vk);
+  if (!y.hexes.length) return 'Yields nothing';
+  const parts = y.hexes
+    .sort((a, b) => b.pips - a.pips)
+    .map((h) => RESOURCES[h.res].label + ' on ' + h.number);
+  let text = y.pips + '/36 per roll — ' + parts.join(', ');
+  if (y.port) text += '\n' + portLabel(y.port);
+  return text;
 }
 
 /* ---------- placement legality ---------- */
@@ -216,8 +248,10 @@ function rollDice() {
   const d2 = 1 + Math.floor(Math.random() * 6);
   state.dice = [d1, d2];
   const sum = d1 + d2;
+  state.stats.rolls[sum]++;
   logMsg(currentPlayer().name + ' rolls ' + d1 + ' + ' + d2 + ' = ' + sum + '.', 'roll');
   if (sum === 7) {
+    state.stats.sevens++;
     handleSeven();
   } else {
     produce(sum);
@@ -251,6 +285,7 @@ function produce(sum) {
     }
     claimants.forEach((p) => {
       const got = grant(p, k, owed[p.id][k]);
+      state.stats.harvested[p.id] += got;
       if (got > 0) lines.push(p.name + ' +' + got + ' ' + RESOURCES[k].icon);
     });
   });
@@ -551,7 +586,9 @@ function endTurn() {
   p.spells = p.spells.concat(p.freshSpells);
   p.freshSpells = [];
   p.playedSpellThisTurn = false;
+  p.offeredThisTurn = false;
   state.pending = null;
+  state.offer = null;
   state.dice = null;
   state.trade = null;
   state.current = (state.current + 1) % state.players.length;

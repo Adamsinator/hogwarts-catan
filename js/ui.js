@@ -131,9 +131,16 @@ function renderSidebar() {
   d2.textContent = state.dice ? state.dice[1] : '·';
 
   $('btn-roll').disabled = !(human && state.phase === 'roll');
+  $('btn-roll').title = 'Roll the dice  (R)';
 
   // hand
   $('hand').innerHTML = RES_KEYS.map((k) => resChipHTML(k, p.res[k])).join('');
+
+  const posts = $('ports');
+  posts.innerHTML = p.ports.length
+    ? p.ports.map((t) => '<span class="post-badge" title="' + portLabel(t) + '">' +
+        (t === 'any' ? '3:1' : RESOURCES[t].icon + ' 2:1') + '</span>').join('')
+    : '<span class="empty">No trading posts — the bank charges you 4:1.</span>';
 
   // build buttons
   const canAct = human && state.phase === 'main' && !state.pending;
@@ -544,6 +551,44 @@ function showTradeResponses(proposer, give, get) {
   m.root.querySelector('[data-x]').addEventListener('click', m.close);
 }
 
+/* ================= an AI puts a trade to the table ================= */
+function resolveOffer(accepted) {
+  const o = state.offer;
+  state.offer = null;
+  if (!o) return tick();
+  const to = state.players[o.toId];
+  if (accepted && canPayBundle(to, o.get)) {
+    executePlayerTrade(o.from, o.toId, o.give, o.get);
+  } else {
+    logMsg(to.name + ' turns down ' + state.players[o.from].name + "'s offer.");
+  }
+  tick();
+}
+
+function showIncomingOffer() {
+  const o = state.offer;
+  const from = state.players[o.from];
+  const to = state.players[o.toId];
+  const affordable = canPayBundle(to, o.get);
+  const m = modal(
+    '<h2>' + from.crest + ' ' + from.name + ' proposes a trade</h2>' +
+    '<p class="sub">To <strong>' + to.name + '</strong>.</p>' +
+    '<div class="offer-box">' +
+      '<div class="offer-side"><span class="offer-lbl">You receive</span>' +
+        '<span class="offer-amt">' + bundleText(o.give) + '</span></div>' +
+      '<span class="offer-arrow">⇄</span>' +
+      '<div class="offer-side"><span class="offer-lbl">You give</span>' +
+        '<span class="offer-amt">' + bundleText(o.get) + '</span></div>' +
+    '</div>' +
+    (affordable ? '' : '<p class="sub" style="color:#ff9f9f">You cannot cover this.</p>') +
+    '<div class="actions"><button class="ghost" data-no>Decline</button>' +
+    '<button class="primary" data-yes' + (affordable ? '' : ' disabled') + '>Accept</button></div>',
+    { dismissible: false }
+  );
+  m.root.querySelector('[data-no]').addEventListener('click', () => { m.close(); resolveOffer(false); });
+  m.root.querySelector('[data-yes]').addEventListener('click', () => { m.close(); resolveOffer(true); });
+}
+
 /* ================= scheduler ================= */
 function tick() {
   if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
@@ -551,6 +596,18 @@ function tick() {
   save();
 
   if (state.phase === 'over') { showVictory(); return; }
+
+  if (state.offer) {
+    const to = state.players[state.offer.toId];
+    if (to.isAI) {
+      aiTimer = setTimeout(() => {
+        resolveOffer(AI.evaluateTradeOffer(to.id, state.offer.give, state.offer.get));
+      }, PACE.action);
+    } else {
+      showIncomingOffer();
+    }
+    return;
+  }
 
   if (state.phase === 'discard') {
     const id = state.discardQueue[0];
@@ -640,6 +697,16 @@ function aiStep() {
     const sp = AI.considerSpell(p);
     if (sp) { playSpell(p.id, sp.card, sp.opts); if (checkVictory()) return tick(); return tick(); }
 
+    if (!p.offeredThisTurn) {
+      const offer = AI.proposeTrade(p);
+      p.offeredThisTurn = true;
+      if (offer) {
+        state.offer = { from: p.id, toId: offer.toId, give: offer.give, get: offer.get };
+        logMsg(p.name + ' offers ' + bundleText(offer.give) + ' for ' + bundleText(offer.get) + '.');
+        return tick();
+      }
+    }
+
     const move = AI.nextBuild(p);
     if (move) {
       if (move.type === 'castle') placeCastle(p.id, move.target);
@@ -672,11 +739,58 @@ function showVictory() {
     '<h2 style="text-align:center">' + w.name + ' wins the House Cup!</h2>' +
     '<p class="sub" style="text-align:center">Final standings</p>' +
     '<div class="setup-players">' + rows + '</div>' +
-    '<div class="actions"><button class="primary" data-new>Play Again</button></div>',
+    '<div class="actions"><button class="ghost" data-again>Rematch on this board</button>' +
+    '<button class="primary" data-new>New Game</button></div>',
     { dismissible: false }
   );
+  const configs = state.configs, seed = state.seed;
   m.root.querySelector('[data-new]').addEventListener('click', () => { m.close(); showSetup(); });
+  m.root.querySelector('[data-again]').addEventListener('click', () => {
+    m.close();
+    createGame(configs, seed);
+    tick();
+  });
   localStorage.removeItem(SAVE_KEY);
+}
+
+/* ================= statistics ================= */
+function showStats() {
+  const rolls = state.stats.rolls;
+  const totalRolls = Object.keys(rolls).reduce((s2, k) => s2 + rolls[k], 0);
+  const peak = Math.max(1, ...Object.keys(rolls).map((k) => rolls[k]));
+  const ways = { 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 5, 9: 4, 10: 3, 11: 2, 12: 1 };
+
+  const bars = Object.keys(rolls).map((n) => {
+    const count = rolls[n];
+    const expected = totalRolls * ways[n] / 36;
+    const hot = n === '6' || n === '8';
+    return '<div class="stat-row">' +
+      '<span class="stat-n' + (hot ? ' hot' : '') + '">' + n + '</span>' +
+      '<span class="stat-track">' +
+        '<span class="stat-bar" style="width:' + (count / peak * 100) + '%"></span>' +
+        '<span class="stat-exp" style="left:' + (expected / peak * 100) + '%" title="Expected ' + expected.toFixed(1) + '"></span>' +
+      '</span>' +
+      '<span class="stat-c">' + count + '</span></div>';
+  }).join('');
+
+  const rows = state.players.map((p) => {
+    const roadLen = longestRoadFor(p.id);
+    return '<div class="setup-row"><span class="crest">' + p.crest + '</span>' +
+      '<span class="hname">' + p.name + '</span>' +
+      '<span class="stat-mini">' + state.stats.harvested[p.id] + ' harvested</span>' +
+      '<span class="stat-mini">' + roadLen + ' route' + (roadLen === 1 ? '' : 's') + '</span>' +
+      '<span class="stat-mini">' + p.aurorsPlayed + ' Aurors</span></div>';
+  }).join('');
+
+  const m = modal(
+    '<h2>📊 The Tally</h2>' +
+    '<p class="sub">' + totalRolls + ' roll' + (totalRolls === 1 ? '' : 's') + ' so far, ' +
+      state.stats.sevens + ' of them sevens. The notch on each bar marks the expected count.</p>' +
+    '<div class="stat-chart">' + bars + '</div>' +
+    '<h3>Houses</h3><div class="setup-players">' + rows + '</div>' +
+    '<div class="actions"><button class="primary" data-x>Close</button></div>'
+  );
+  m.root.querySelector('[data-x]').addEventListener('click', m.close);
 }
 
 /* ================= new game / rules ================= */
@@ -756,8 +870,17 @@ function showRules() {
     '<li>A scroll drawn this turn may not be cast until your next turn, and only one may be cast per turn.</li>' +
     '</ul>' +
     '<h3>Trading</h3><ul>' +
-    '<li>With the bank at <code>4:1</code>, or <code>3:1</code> / <code>2:1</code> at a Trading Post your Cottage touches.</li>' +
-    '<li>Or offer a swap to the other houses.</li>' +
+    '<li>With the bank at <code>4:1</code>, or <code>3:1</code> / <code>2:1</code> at a Trading Post your Cottage touches. The posts you hold are listed beneath your hand.</li>' +
+    '<li>Or offer a swap to the other houses — and they will put offers to you in turn.</li>' +
+    '</ul>' +
+    '<h3>Reading the Board</h3><ul>' +
+    '<li>When you place, every legal junction shows what it pays per roll out of 36. Green marks a strong spot, gold a fair one. Hover for the exact regions.</li>' +
+    '<li>After a roll, the regions that paid out are ringed in gold.</li>' +
+    '<li><strong>Stats</strong> keeps a tally of every roll against what probability expects.</li>' +
+    '</ul>' +
+    '<h3>Shortcuts</h3><ul>' +
+    '<li><code>R</code> roll · <code>E</code> end turn · <code>T</code> bank trade · <code>O</code> offer a trade · <code>S</code> stats</li>' +
+    '<li><code>1</code>–<code>4</code> pick a thing to build · <code>Esc</code> cancel or close</li>' +
     '</ul>' +
     '<h3>Titles</h3><ul>' +
     '<li><strong>Longest Floo Network</strong> — 5+ connected routes, +2 points. An opponent’s building breaks the chain.</li>' +
@@ -781,6 +904,7 @@ function loadSave() {
     if (!raw) return null;
     const s = JSON.parse(raw);
     if (!s || !s.board || !s.players) return null;
+    s.offer = null;   // an offer in flight cannot be resumed meaningfully
     return s;
   } catch (e) { return null; }
 }
@@ -825,6 +949,34 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state && state.phase !== 'over' && !confirm('Abandon the current game?')) return;
     closeAllModals();
     showSetup();
+  });
+
+  $('btn-stats').addEventListener('click', () => { if (state) showStats(); });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const tag = (e.target.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+
+    if (e.key === 'Escape') {
+      const dismissible = [...document.querySelectorAll('.overlay')].pop();
+      if (dismissible) { dismissible.remove(); return; }
+      if (state && state.pending && !state.pending.free) { state.pending = null; render(); }
+      return;
+    }
+    if (!state || document.querySelector('.overlay')) return;
+
+    const press = (id) => { const b = $(id); if (b && !b.disabled) b.click(); };
+    const key = e.key.toLowerCase();
+    if (key === 'r') press('btn-roll');
+    else if (key === 'e') press('btn-end');
+    else if (key === 't') press('btn-bank');
+    else if (key === 'o') press('btn-offer');
+    else if (key === 's') press('btn-stats');
+    else if ('1234'.includes(key)) {
+      const btn = document.querySelectorAll('.build-btn')[Number(key) - 1];
+      if (btn && !btn.disabled) btn.click();
+    }
   });
 
   const saved = loadSave();

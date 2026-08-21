@@ -13,9 +13,9 @@ between actions.
 
 | Level | Behaviour | Win rate* |
 |---|---|---|
-| Easy | Chases raw pips, rarely visits the bank, aims the Dementor almost at random, accepts poor trades | 20% |
-| Medium | Sound play: sensible build order, bank-trades toward its next piece, targets the leader | 34% |
-| Hard | Weighs scarcity and ports, hunts the Longest Floo Network, drives for 10 once it reaches 8, refuses trades that help the leader | 46% |
+| Easy | Chases raw pips, rarely visits the bank, aims the Dementor almost at random, accepts poor trades, never opens a negotiation | 14% |
+| Medium | Sound play: sensible build order, bank-trades toward its next piece, targets the leader, offers deals when a card short | 36% |
+| Hard | Weighs scarcity and ports, hunts the Longest Floo Network, drives for 10 once it reaches 8, refuses trades that help the leader | 50% |
 
 \* Measured over 150 three-handed games with one AI of each level and rotated seating.
 The levels differ in strategy, not just strength — Hard takes the Longest Floo Network in 62% of
@@ -45,12 +45,25 @@ Standard Catan, including the fiddly bits:
 - Distance rule, road connectivity, and opponent buildings breaking a Floo Network.
 - Roll of 7: discard half above 7 cards, banish the Dementor, steal a card.
 - Bank shortfall rule — if the supply can't pay every claimant, nobody collects that resource.
-- 4:1 / 3:1 / 2:1 trading, plus player-to-player offers.
+- 4:1 / 3:1 / 2:1 trading, plus player-to-player offers in both directions: medium and hard
+  opponents open negotiations rather than only answering them.
 - Spell Scrolls are unplayable on the turn they're drawn; one per turn.
 - Longest Floo Network (5+) and Dumbledore's Army (3+) are held until strictly beaten.
 
-Games autosave to `localStorage` and offer to resume on reload. Regions that just paid out are
-ringed on the board so a roll can be read at a glance.
+Games autosave to `localStorage` and offer to resume on reload.
+
+### Playing aids
+
+- **Junction values.** Every legal placement shows what it pays per roll out of 36, graded green
+  for strong and gold for fair, with the exact regions on hover.
+- **Harvest ring.** Regions that just paid out are ringed in gold, so a roll reads off the board.
+- **The Tally.** A running histogram of every roll against what probability expects, plus each
+  house's total harvest, longest route and Aurors played.
+- **Trading posts.** The posts you hold are listed under your hand, so your bank rate is never a
+  guess.
+- **Rematch on this board.** Replay the same map with the same houses from the victory screen.
+- **Shortcuts.** `R` roll, `E` end turn, `T` bank trade, `O` offer a trade, `S` stats,
+  `1`–`4` build, `Esc` cancel or close.
 
 ## Testing
 

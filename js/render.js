@@ -401,10 +401,17 @@ function drawBuildings(g) {
 function drawHints(g, handlers) {
   (handlers.vertexTargets || []).forEach((vk) => {
     const v = state.board.vertices[vk];
+    const y = vertexYield(vk);
+    // Grade the marker by how much the junction actually pays out, and print
+    // the pip count, so a spot can be judged without counting dots by hand.
+    const tone = y.pips >= 10 ? '#8ce99a' : y.pips >= 7 ? '#ffe082' : '#c9b89a';
     const grp = el('g', { class: 'hint vertex-hint', transform: 'translate(' + v.x + ',' + v.y + ')' }, g);
     el('circle', { r: 26, fill: 'transparent' }, grp);   // generous touch target
-    el('circle', { r: 15, fill: '#ffe082', opacity: 0.28 }, grp);
-    el('circle', { r: 9, fill: '#ffe082', stroke: '#8a6d1f', 'stroke-width': 2 }, grp);
+    el('circle', { r: 17, fill: tone, opacity: 0.26 }, grp);
+    el('circle', { r: 12, fill: tone, stroke: '#4a3c14', 'stroke-width': 1.6 }, grp);
+    el('text', { y: 4, 'text-anchor': 'middle', class: 'hint-pips' }, grp).textContent = y.pips;
+    if (y.port) el('circle', { cx: 11, cy: -11, r: 4.5, fill: '#12172c', stroke: '#c9a227', 'stroke-width': 1.5 }, grp);
+    el('title', null, grp).textContent = vertexYieldText(vk);
     grp.addEventListener('click', () => handlers.onVertex(vk));
   });
 

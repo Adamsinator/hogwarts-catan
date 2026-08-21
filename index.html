@@ -29,6 +29,7 @@
         <option value="relaxed">Relaxed</option>
       </select>
     </label>
+    <button id="btn-stats" class="ghost" title="Roll tally and house standings  (S)">Stats</button>
     <button id="btn-rules" class="ghost">Rules</button>
     <button id="btn-new" class="ghost">New Game</button>
   </div>
@@ -61,6 +62,7 @@
     <div class="panel">
       <h2>Your Hand</h2>
       <div id="hand" class="hand"></div>
+      <div id="ports" class="ports"></div>
     </div>
 
     <div class="panel">
@@ -76,12 +78,12 @@
     <div class="panel">
       <h2>Trade</h2>
       <div class="trade-row">
-        <button id="btn-bank" class="ghost wide">Trade with the Bank</button>
-        <button id="btn-offer" class="ghost wide">Offer a Trade</button>
+        <button id="btn-bank" class="ghost wide" title="Trade with the bank  (T)">Trade with the Bank</button>
+        <button id="btn-offer" class="ghost wide" title="Offer a trade  (O)">Offer a Trade</button>
       </div>
     </div>
 
-    <button id="btn-end" class="primary wide end-turn">End Turn</button>
+    <button id="btn-end" class="primary wide end-turn" title="End your turn  (E)">End Turn</button>
   </aside>
 
   <section class="roster">

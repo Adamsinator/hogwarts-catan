@@ -159,6 +159,7 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 .hex-num.hot{fill:#9b1414;}
 .hex-pips{font-size:11px;fill:#6b5a30;letter-spacing:1.5px;}
 .hex-pips.hot{fill:#9b1414;}
+.hint-pips{font-family:var(--serif);font-size:13px;font-weight:700;fill:#2b2314;pointer-events:none;}
 .port-any{font-family:var(--serif);font-size:15px;font-weight:700;fill:var(--gold-soft);}
 .port-icon{font-size:17px;}
 .port-ratio{font-family:var(--serif);font-size:11px;font-weight:700;fill:var(--gold-soft);}
@@ -227,6 +228,45 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 .res-chip .n{font-family:var(--serif);font-size:16px;font-weight:700;color:var(--gold-soft);}
 .res-chip .lbl{display:block;font-size:9.5px;color:var(--muted);letter-spacing:.04em;}
 .res-chip.zero{opacity:.42;}
+
+/* ---------- trading posts held ---------- */
+.ports{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;align-items:center;}
+.post-badge{
+  font-size:11px;border:1px solid var(--gold);color:var(--gold-soft);
+  background:rgba(201,162,39,.12);border-radius:999px;padding:2px 8px;letter-spacing:.02em;
+}
+.ports .empty{font-size:11.5px;color:var(--muted);font-style:italic;}
+
+/* ---------- an offer put to you ---------- */
+.offer-box{
+  display:flex;align-items:center;gap:14px;justify-content:space-between;
+  background:rgba(255,255,255,.04);border:1px solid var(--line);
+  border-radius:11px;padding:14px 16px;margin:6px 0 4px;
+}
+.offer-side{display:flex;flex-direction:column;gap:5px;min-width:0;}
+.offer-lbl{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--muted);}
+.offer-amt{font-family:var(--serif);font-size:20px;color:var(--gold-soft);}
+.offer-arrow{font-size:22px;color:var(--gold);flex:none;}
+
+/* ---------- the tally ---------- */
+.stat-chart{display:flex;flex-direction:column;gap:3px;margin:4px 0 2px;}
+.stat-row{display:flex;align-items:center;gap:9px;}
+.stat-n{
+  font-family:var(--serif);font-weight:700;font-size:13px;width:20px;
+  text-align:right;color:var(--text);flex:none;
+}
+.stat-n.hot{color:#ff9f9f;}
+.stat-track{
+  position:relative;flex:1;height:15px;border-radius:4px;
+  background:rgba(255,255,255,.05);overflow:hidden;
+}
+.stat-bar{
+  position:absolute;left:0;top:0;bottom:0;border-radius:4px;
+  background:linear-gradient(90deg,rgba(201,162,39,.55),var(--gold-soft));
+}
+.stat-exp{position:absolute;top:0;bottom:0;width:2px;background:rgba(255,255,255,.55);}
+.stat-c{font-size:12px;color:var(--muted);width:22px;flex:none;}
+.stat-mini{font-size:11.5px;color:var(--muted);white-space:nowrap;}
 
 /* ---------- build ---------- */
 .build-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;}

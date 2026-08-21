@@ -13,17 +13,17 @@
 
 const AI_LEVELS = {
   easy: {
-    label: 'Easy', noise: 26, planTrades: true, tradeAfter: 8, skipChance: 0.15,
+    label: 'Easy', noise: 26, planTrades: true, tradeAfter: 8, skipChance: 0.15, proposes: false,
     dementorSkill: 0.15, spellSkill: 0.35, scarcity: 0, portValue: 0,
     endgame: false, chaseRoad: false, tradeGenerosity: 1.6,
   },
   medium: {
-    label: 'Medium', noise: 7, planTrades: true, tradeAfter: 0, skipChance: 0.08,
+    label: 'Medium', noise: 7, planTrades: true, tradeAfter: 0, skipChance: 0.08, proposes: true,
     dementorSkill: 0.8, spellSkill: 0.85, scarcity: 8, portValue: 4,
     endgame: false, chaseRoad: false, tradeGenerosity: 1.0,
   },
   hard: {
-    label: 'Hard', noise: 1.5, planTrades: true, tradeAfter: 0, skipChance: 0,
+    label: 'Hard', noise: 1.5, planTrades: true, tradeAfter: 0, skipChance: 0, proposes: true,
     dementorSkill: 1, spellSkill: 1, scarcity: 14, portValue: 7,
     endgame: true, chaseRoad: true, tradeGenerosity: 0.55,
   },
@@ -325,6 +325,47 @@ const AI = (function () {
     return null;
   }
 
+  /* ---------- putting an offer to the table ---------- */
+  // Offered when one card short of the next piece: better rates than the bank,
+  // so a house would rather deal with a neighbour than pay 4:1.
+  function proposeTrade(p) {
+    const c = cfg(p.id);
+    if (!c.proposes || p.offeredThisTurn) return null;
+
+    const goal = COSTS[currentGoal(p)];
+    const { need, total } = missingFor(p, goal);
+    if (total !== 1) return null;                      // only a single card short
+    const want = Object.keys(need)[0];
+    if (planBankTrades(p, goal)) return null;          // the bank already covers it
+
+    // Spend from the biggest pile that the goal does not itself require.
+    const spare = RES_KEYS
+      .filter((k) => k !== want && p.res[k] - (goal[k] || 0) > 0)
+      .sort((a, b) => (p.res[b] - (goal[b] || 0)) - (p.res[a] - (goal[a] || 0)))[0];
+    if (!spare) return null;
+
+    const surplus = p.res[spare] - (goal[spare] || 0);
+    // A sharper player opens at 1-for-1; a plainer one sweetens it immediately.
+    const giveN = Math.min(surplus, c.endgame ? 1 : 2);
+    if (giveN < 1) return null;
+
+    let holders = state.players.filter((o) => o.id !== p.id && o.res[want] > 0);
+    if (c.endgame) {
+      // never top up whoever is closest to the House Cup
+      const lead = Math.max(...state.players.map((o) => victoryPoints(o.id, false)));
+      const safe = holders.filter((o) => victoryPoints(o.id, false) < lead || lead < VP_TO_WIN - 3);
+      if (safe.length) holders = safe;
+    }
+    if (!holders.length) return null;
+
+    holders.sort((a, b) => b.res[want] - a.res[want]);
+    const give = {}, get = {};
+    RES_KEYS.forEach((k) => { give[k] = 0; get[k] = 0; });
+    give[spare] = giveN;
+    get[want] = 1;
+    return { toId: holders[0].id, give, get };
+  }
+
   /* ---------- responding to an offer ---------- */
   function evaluateTradeOffer(playerId, give, get) {
     const c = cfg(playerId);
@@ -354,7 +395,7 @@ const AI = (function () {
   return {
     bestSetupVertex, bestSetupRoad, bestDementorHex, richestTarget,
     bestCottageSpot, bestCastleSpot, bestRoadSpot, roadClaimsLongest,
-    considerSpell, nextBuild, evaluateTradeOffer, currentGoal, vertexValue,
+    considerSpell, nextBuild, evaluateTradeOffer, proposeTrade, currentGoal, vertexValue,
     planBankTrades, cfg,
   };
 })();
