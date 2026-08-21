@@ -86,5 +86,9 @@ js/ui.js        panels, modals, turn scheduler
 
 ## Deploying to GitHub Pages
 
-Push to a repo and enable Pages on the `main` branch, root folder. `.nojekyll` is present so
-files are served verbatim.
+Push to `main`; Pages serves the repo root. `.nojekyll` is present so files are served verbatim.
+
+**Bump the `?v=` on the asset links in `index.html` with every deploy.** GitHub Pages sends a
+cache lifetime on CSS and JS, so without a new query string a returning player keeps running the
+previous version while `index.html` itself refreshes — which is exactly the sort of mismatch that
+looks like a phantom bug.
