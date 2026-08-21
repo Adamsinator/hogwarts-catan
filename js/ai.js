@@ -7,23 +7,26 @@
    medium — plays a sound game: builds in a sensible order, bank-trades to
             reach the next piece, targets the leader with the Dementor.
    hard   — values scarcity and ports, hunts the Longest Floo Network when
-            it is winnable, drives toward 10 points once it reaches 8, and
-            refuses trades that help whoever is ahead.
+            it is winnable, drives for the last points once it nears the target,
+            and refuses trades that help whoever is ahead.
 ------------------------------------------------------------------ */
 
 const AI_LEVELS = {
   easy: {
     label: 'Easy', noise: 26, planTrades: true, tradeAfter: 8, skipChance: 0.15, proposes: false,
+    buildsCitadels: false, wards: false,
     dementorSkill: 0.15, spellSkill: 0.35, scarcity: 0, portValue: 0,
     endgame: false, chaseRoad: false, tradeGenerosity: 1.6,
   },
   medium: {
     label: 'Medium', noise: 7, planTrades: true, tradeAfter: 0, skipChance: 0.08, proposes: true,
+    buildsCitadels: true, wards: true,
     dementorSkill: 0.8, spellSkill: 0.85, scarcity: 8, portValue: 4,
     endgame: false, chaseRoad: false, tradeGenerosity: 1.0,
   },
   hard: {
     label: 'Hard', noise: 1.5, planTrades: true, tradeAfter: 0, skipChance: 0, proposes: true,
+    buildsCitadels: true, wards: true,
     dementorSkill: 1, spellSkill: 1, scarcity: 14, portValue: 7,
     endgame: true, chaseRoad: true, tradeGenerosity: 0.55,
   },
@@ -126,6 +129,18 @@ const AI = (function () {
   function bestCastleSpot(playerId) {
     const c = cfg(playerId);
     return pickBest(validCastleSpots(playerId), (vk) => vertexValue(vk, playerId), c.noise);
+  }
+
+  function bestCitadelSpot(playerId) {
+    const c = cfg(playerId);
+    return pickBest(validCitadelSpots(playerId), (vk) => vertexValue(vk, playerId), c.noise);
+  }
+
+  // Ward the holding that produces most — it is the one worth protecting, and
+  // the one a rival's Dementor will sit on.
+  function bestWardSpot(playerId) {
+    const c = cfg(playerId);
+    return pickBest(validWardSpots(playerId), (vk) => vertexValue(vk, playerId), c.noise);
   }
 
   // Would laying this road take (or extend) the Longest Floo Network?
@@ -280,6 +295,7 @@ const AI = (function () {
   }
 
   function currentGoal(p) {
+    if (p.pieces.citadel > 0 && validCitadelSpots(p.id).length) return 'citadel';
     if (p.pieces.castle > 0 && validCastleSpots(p.id).length) return 'castle';
     if (p.pieces.cottage > 0 && validCottageSpots(p.id, false).length) return 'cottage';
     if (p.pieces.road > 0 && validRoadSpots(p.id).length) return 'road';
@@ -295,6 +311,19 @@ const AI = (function () {
     const closing = c.endgame && vp >= VP_TO_WIN - 2;
     // Weaker players only think to visit the bank once their hand is bulging.
     const mayTrade = c.planTrades && totalCards(p) >= (c.tradeAfter || 0);
+
+    // Citadels: three points and triple production, at a steep price.
+    if (p.pieces.citadel > 0 && c.buildsCitadels) {
+      const spot = bestCitadelSpot(p.id);
+      if (spot && affordVia(p, COSTS.citadel, mayTrade)) return { type: 'citadel', target: spot };
+    }
+
+    // A Shield Charm once the hand is regularly over the limit.
+    if (c.wards && p.pieces.ward > 0) {
+      const spot = bestWardSpot(p.id);
+      const exposed = totalCards(p) >= handLimit(p.id) - 1;
+      if (spot && exposed && affordVia(p, COSTS.ward, false)) return { type: 'ward', target: spot };
+    }
 
     // Castles: two points and double production.
     if (p.pieces.castle > 0) {
@@ -394,7 +423,7 @@ const AI = (function () {
 
   return {
     bestSetupVertex, bestSetupRoad, bestDementorHex, richestTarget,
-    bestCottageSpot, bestCastleSpot, bestRoadSpot, roadClaimsLongest,
+    bestCottageSpot, bestCastleSpot, bestCitadelSpot, bestWardSpot, bestRoadSpot, roadClaimsLongest,
     considerSpell, nextBuild, evaluateTradeOffer, proposeTrade, currentGoal, vertexValue,
     planBankTrades, cfg,
   };

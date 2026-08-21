@@ -6,20 +6,20 @@ no dependencies, no backend. Open `index.html` or serve the folder.
 ## Playing
 
 Two to four houses compete — any mix of humans (hot-seat) and AI at three skill levels. First to
-**10 victory points** wins the House Cup. A **Pace** control sets how long AI opponents pause
+**12 victory points** wins the House Cup. A **Pace** control sets how long AI opponents pause
 between actions.
 
 ### AI difficulty
 
 | Level | Behaviour | Win rate* |
 |---|---|---|
-| Easy | Chases raw pips, rarely visits the bank, aims the Dementor almost at random, accepts poor trades, never opens a negotiation | 14% |
-| Medium | Sound play: sensible build order, bank-trades toward its next piece, targets the leader, offers deals when a card short | 36% |
-| Hard | Weighs scarcity and ports, hunts the Longest Floo Network, drives for 10 once it reaches 8, refuses trades that help the leader | 50% |
+| Easy | Chases raw pips, rarely visits the bank, aims the Dementor almost at random, accepts poor trades, never opens a negotiation, and never builds Citadels or wards | 15% |
+| Medium | Sound play: sensible build order, bank-trades toward its next piece, targets the leader, offers deals when a card short, builds Citadels and wards | 36% |
+| Hard | Weighs scarcity and ports, hunts the Longest Floo Network, drives for the last points once it nears the target, refuses trades that help the leader | 49% |
 
 \* Measured over 150 three-handed games with one AI of each level and rotated seating.
 The levels differ in strategy, not just strength — Hard takes the Longest Floo Network in 62% of
-games against 12% for Easy.
+games against 12% for Easy, and Easy never builds a Citadel or a Shield Charm at all.
 
 | Catan | Hogsmeade |
 |---|---|
@@ -28,6 +28,8 @@ games against 12% for Easy.
 | Desert | Azkaban |
 | Robber | The Dementor |
 | Road / Settlement / City | Floo Route / Cottage / Castle |
+| *(no equivalent)* | Citadel — a third tier, 3 points and 3 cards a harvest |
+| City Wall | Shield Charm — a ward that raises your hand limit |
 | Development cards | Spell Scrolls — Auror, Floo Powder, Accio, Imperio, Order of Merlin |
 | Longest Road | Longest Floo Network |
 | Largest Army | Dumbledore's Army |
@@ -42,6 +44,9 @@ Standard Catan, including the fiddly bits:
 - 19-hex board, random terrain with the classic number spiral; layouts reshuffle until no two
   6/8 or matching tokens are adjacent.
 - Snake-order setup; the second Cottage harvests its surrounding regions.
+- Three building tiers: Cottage (1 point, 1 card), Castle (2 and 2), Citadel (3 and 3).
+- Shield Charms raise your own hand limit by 2 each, up to three, taking it from 7 to 13. A ward
+  survives its Castle becoming a Citadel.
 - Distance rule, road connectivity, and opponent buildings breaking a Floo Network.
 - Roll of 7: discard half above 7 cards, banish the Dementor, steal a card.
 - Bank shortfall rule — if the supply can't pay every claimant, nobody collects that resource.
@@ -62,8 +67,10 @@ Games autosave to `localStorage` and offer to resume on reload.
 - **Trading posts.** The posts you hold are listed under your hand, so your bank rate is never a
   guess.
 - **Rematch on this board.** Replay the same map with the same houses from the victory screen.
+- **Career record.** Wins and games per house persist across sessions, shown on the setup screen
+  and in the Stats panel, with the quickest win and best score.
 - **Shortcuts.** `R` roll, `E` end turn, `T` bank trade, `O` offer a trade, `S` stats,
-  `1`–`4` build, `Esc` cancel or close.
+  `1`–`6` build, `Esc` cancel or close.
 
 ## Testing
 

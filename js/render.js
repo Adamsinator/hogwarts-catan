@@ -382,6 +382,12 @@ function cottagePath() {
 function castlePath() {
   return 'M -15 12 L -15 -4 L -10 -4 L -10 -10 L -5 -10 L -5 -4 L 0 -4 L 0 -12 L 6 -12 L 6 -4 L 15 -4 L 15 12 Z';
 }
+// Taller, with a spire, so the third tier reads at a glance.
+function citadelPath() {
+  return 'M -17 13 L -17 -6 L -12 -6 L -12 -13 L -7 -13 L -7 -6 L -3 -6 L -3 -14 ' +
+         'L 0 -24 L 3 -14 L 3 -6 L 8 -6 L 8 -13 L 13 -13 L 13 -6 L 17 -6 L 17 13 Z';
+}
+const BUILDING_PATHS = { cottage: cottagePath, castle: castlePath, citadel: citadelPath };
 
 function drawBuildings(g) {
   Object.keys(state.buildings).forEach((vk) => {
@@ -389,12 +395,21 @@ function drawBuildings(g) {
     const v = state.board.vertices[vk];
     const p = state.players[b.owner];
     const grp = el('g', { class: 'building', transform: 'translate(' + v.x + ',' + v.y + ')', filter: 'url(#drop)' }, g);
+
+    // A Shield Charm shows as a glowing dome over the holding.
+    if (b.ward) {
+      el('path', {
+        d: 'M -21 14 A 21 21 0 0 0 21 14 Z',   // sweep 0 so the dome arches over the holding
+        fill: '#8fe3ff', opacity: 0.20, stroke: '#8fe3ff', 'stroke-width': 2, class: 'ward-dome',
+      }, grp);
+    }
+
     el('path', {
-      d: b.type === 'castle' ? castlePath() : cottagePath(),
+      d: (BUILDING_PATHS[b.type] || cottagePath)(),
       fill: p.color, stroke: '#080a14', 'stroke-width': 2.5, 'stroke-linejoin': 'round',
     }, grp);
     const title = el('title', null, grp);
-    title.textContent = p.name + ' — ' + PIECE_NAMES[b.type];
+    title.textContent = p.name + ' — ' + PIECE_NAMES[b.type] + (b.ward ? ' with a Shield Charm' : '');
   });
 }
 

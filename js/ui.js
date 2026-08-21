@@ -136,6 +136,14 @@ function renderSidebar() {
   // hand
   $('hand').innerHTML = RES_KEYS.map((k) => resChipHTML(k, p.res[k])).join('');
 
+  const limit = handLimit(p.id);
+  const held = totalCards(p);
+  const handHead = document.querySelector('#hand').previousElementSibling;
+  if (handHead) {
+    handHead.innerHTML = 'Your Hand <span class="hand-limit' + (held > limit ? ' over' : '') + '">' +
+      held + ' / ' + limit + '</span>';
+  }
+
   const posts = $('ports');
   posts.innerHTML = p.ports.length
     ? p.ports.map((t) => '<span class="post-badge" title="' + portLabel(t) + '">' +
@@ -148,6 +156,8 @@ function renderSidebar() {
     { kind: 'road', label: 'Floo Route', cost: COSTS.road, spots: () => validRoadSpots(p.id).length, left: p.pieces.road },
     { kind: 'cottage', label: 'Cottage', cost: COSTS.cottage, spots: () => validCottageSpots(p.id, false).length, left: p.pieces.cottage },
     { kind: 'castle', label: 'Castle', cost: COSTS.castle, spots: () => validCastleSpots(p.id).length, left: p.pieces.castle },
+    { kind: 'citadel', label: 'Citadel', cost: COSTS.citadel, spots: () => validCitadelSpots(p.id).length, left: p.pieces.citadel },
+    { kind: 'ward', label: 'Shield Charm', cost: COSTS.ward, spots: () => validWardSpots(p.id).length, left: p.pieces.ward },
   ];
   const grid = $('build-actions');
   grid.innerHTML = '';
@@ -269,6 +279,8 @@ function boardHandlers() {
     if (state.pending.kind === 'road') h.edgeTargets = validRoadSpots(p.id);
     else if (state.pending.kind === 'cottage') h.vertexTargets = validCottageSpots(p.id, false);
     else if (state.pending.kind === 'castle') h.vertexTargets = validCastleSpots(p.id);
+    else if (state.pending.kind === 'citadel') h.vertexTargets = validCitadelSpots(p.id);
+    else if (state.pending.kind === 'ward') h.vertexTargets = validWardSpots(p.id);
   }
   return h;
 }
@@ -287,6 +299,13 @@ function onVertex(vk) {
     placeCastle(p.id, vk);
     state.pending = null;
     checkVictory();
+  } else if (state.pending && state.pending.kind === 'citadel') {
+    placeCitadel(p.id, vk);
+    state.pending = null;
+    checkVictory();
+  } else if (state.pending && state.pending.kind === 'ward') {
+    placeWard(p.id, vk);
+    state.pending = null;
   }
   tick();
 }
@@ -372,7 +391,8 @@ function showDiscardModal(playerId) {
   const need = Math.floor(totalCards(p) / 2);
   const m = modal(
     '<h2>🗡 The Dementor Feeds</h2>' +
-    '<p class="sub"><strong>' + p.name + '</strong> holds ' + totalCards(p) + ' cards and must discard <strong>' + need + '</strong>.</p>' +
+    '<p class="sub"><strong>' + p.name + '</strong> holds ' + totalCards(p) + ' cards against a limit of ' +
+      handLimit(playerId) + ', and must discard <strong>' + need + '</strong>.</p>' +
     '<div id="dq"></div>' +
     '<div class="actions"><span id="dq-count" class="sub"></span>' +
     '<button class="primary" data-go disabled>Discard</button></div>',
@@ -709,7 +729,9 @@ function aiStep() {
 
     const move = AI.nextBuild(p);
     if (move) {
-      if (move.type === 'castle') placeCastle(p.id, move.target);
+      if (move.type === 'citadel') placeCitadel(p.id, move.target);
+      else if (move.type === 'ward') placeWard(p.id, move.target);
+      else if (move.type === 'castle') placeCastle(p.id, move.target);
       else if (move.type === 'cottage') placeCottage(p.id, move.target, false);
       else if (move.type === 'road') placeRoad(p.id, move.target, false);
       else if (move.type === 'spell') buySpell(p.id);
@@ -727,6 +749,7 @@ function aiStep() {
 /* ================= victory ================= */
 function showVictory() {
   closeAllModals();
+  const career = recordResult();
   const w = state.players[state.winner];
   const rows = state.players
     .map((p) => ({ p, vp: victoryPoints(p.id, true) }))
@@ -739,6 +762,10 @@ function showVictory() {
     '<h2 style="text-align:center">' + w.name + ' wins the House Cup!</h2>' +
     '<p class="sub" style="text-align:center">Final standings</p>' +
     '<div class="setup-players">' + rows + '</div>' +
+    '<p class="sub" style="text-align:center;margin-top:14px">' +
+      career.games + ' game' + (career.games === 1 ? '' : 's') + ' played · ' +
+      'quickest win ' + career.fastestWin + ' rounds · best score ' + career.bestVP +
+    '</p>' +
     '<div class="actions"><button class="ghost" data-again>Rematch on this board</button>' +
     '<button class="primary" data-new>New Game</button></div>',
     { dismissible: false }
@@ -751,6 +778,44 @@ function showVictory() {
     tick();
   });
   localStorage.removeItem(SAVE_KEY);
+}
+
+/* ================= career record ================= */
+const CAREER_KEY = 'hogsmeade.career.v1';
+
+function loadCareer() {
+  try {
+    const c = JSON.parse(localStorage.getItem(CAREER_KEY));
+    if (c && c.houses) return c;
+  } catch (e) { /* fall through */ }
+  return { houses: {}, games: 0, fastestWin: null, bestVP: 0 };
+}
+
+function saveCareer(c) {
+  try { localStorage.setItem(CAREER_KEY, JSON.stringify(c)); } catch (e) { /* ignore */ }
+}
+
+function recordResult() {
+  const c = loadCareer();
+  c.games++;
+  state.players.forEach((p) => {
+    const h = c.houses[p.house] || { played: 0, won: 0 };
+    h.played++;
+    if (p.id === state.winner) h.won++;
+    c.houses[p.house] = h;
+  });
+  const vp = victoryPoints(state.winner, true);
+  if (vp > c.bestVP) c.bestVP = vp;
+  const turns = Math.ceil(state.turnCount / state.players.length);
+  if (c.fastestWin === null || turns < c.fastestWin) c.fastestWin = turns;
+  saveCareer(c);
+  return c;
+}
+
+function careerLine(houseKey) {
+  const h = loadCareer().houses[houseKey];
+  if (!h || !h.played) return '';
+  return h.won + 'W / ' + h.played;
 }
 
 /* ================= statistics ================= */
@@ -788,9 +853,33 @@ function showStats() {
       state.stats.sevens + ' of them sevens. The notch on each bar marks the expected count.</p>' +
     '<div class="stat-chart">' + bars + '</div>' +
     '<h3>Houses</h3><div class="setup-players">' + rows + '</div>' +
-    '<div class="actions"><button class="primary" data-x>Close</button></div>'
+    '<h3>Career</h3>' + careerBlock() +
+    '<div class="actions"><button class="ghost" data-reset>Clear Record</button>' +
+    '<button class="primary" data-x>Close</button></div>'
   );
   m.root.querySelector('[data-x]').addEventListener('click', m.close);
+  m.root.querySelector('[data-reset]').addEventListener('click', () => {
+    if (!confirm('Erase the career record for every house?')) return;
+    localStorage.removeItem(CAREER_KEY);
+    m.close();
+    showStats();
+  });
+}
+
+function careerBlock() {
+  const c = loadCareer();
+  if (!c.games) return '<p class="sub">No games finished yet — the record starts with your first House Cup.</p>';
+  const rows = HOUSES.filter((h) => c.houses[h.key] && c.houses[h.key].played).map((h) => {
+    const r = c.houses[h.key];
+    const pct = Math.round(r.won / r.played * 100);
+    return '<div class="setup-row"><span class="crest">' + h.crest + '</span>' +
+      '<span class="hname">' + h.name + '</span>' +
+      '<span class="stat-mini">' + r.won + ' of ' + r.played + '</span>' +
+      '<span class="stat-mini">' + pct + '%</span></div>';
+  }).join('');
+  return '<p class="sub">' + c.games + ' game' + (c.games === 1 ? '' : 's') + ' finished · ' +
+    'quickest win ' + c.fastestWin + ' rounds · best score ' + c.bestVP + '</p>' +
+    '<div class="setup-players">' + rows + '</div>';
 }
 
 /* ================= new game / rules ================= */
@@ -801,7 +890,8 @@ function showSetup() {
     const opt = (v, label) => '<option value="' + v + '"' + (def === v ? ' selected' : '') + '>' + label + '</option>';
     return '<div class="setup-row" data-house="' + h.key + '">' +
       '<span class="crest">' + h.crest + '</span>' +
-      '<span class="hname">' + h.name + '</span>' +
+      '<span class="hname">' + h.name +
+        (careerLine(h.key) ? ' <span class="career">' + careerLine(h.key) + '</span>' : '') + '</span>' +
       '<input type="text" value="' + h.name + '" maxlength="14" aria-label="Name">' +
       '<select aria-label="Player type">' +
       opt('human', 'Human') +
@@ -845,7 +935,7 @@ function showRules() {
   modal(
     '<h2>📖 The Rules of Hogsmeade</h2>' +
     '<div class="rules-body">' +
-    '<p>Wizarding families are settling the valley around Hogsmeade. Claim the best land, keep the Floo network open, and reach <strong>10 victory points</strong> first.</p>' +
+    '<p>Wizarding families are settling the valley around Hogsmeade. Claim the best land, keep the Floo network open, and reach <strong>' + VP_TO_WIN + ' victory points</strong> first.</p>' +
     '<h3>Setup</h3><ul>' +
     '<li>In turn order each house places a <strong>Cottage</strong> and a <strong>Floo Route</strong>, then the order reverses and everyone places a second pair.</li>' +
     '<li>The second Cottage immediately harvests one resource from each neighbouring region.</li>' +
@@ -857,13 +947,20 @@ function showRules() {
     '</ul>' +
     '<h3>Costs</h3><ul>' +
     '<li><strong>Floo Route</strong> — ' + costText(COSTS.road) + '</li>' +
-    '<li><strong>Cottage</strong> — ' + costText(COSTS.cottage) + ' (1 point)</li>' +
-    '<li><strong>Castle</strong> — ' + costText(COSTS.castle) + ' (upgrades a Cottage, 2 points)</li>' +
+    '<li><strong>Cottage</strong> — ' + costText(COSTS.cottage) + ' (1 point, 1 card per harvest)</li>' +
+    '<li><strong>Castle</strong> — ' + costText(COSTS.castle) + ' (upgrades a Cottage: 2 points, 2 cards)</li>' +
+    '<li><strong>Citadel</strong> — ' + costText(COSTS.citadel) + ' (upgrades a Castle: 3 points, 3 cards)</li>' +
+    '<li><strong>Shield Charm</strong> — ' + costText(COSTS.ward) + ' (warded holding, see below)</li>' +
     '<li><strong>Spell Scroll</strong> — ' + costText(COSTS.spell) + '</li>' +
     '</ul>' +
     '<h3>The Dementor</h3><ul>' +
-    '<li>Roll a <strong>7</strong> and anyone holding more than 7 cards feeds half of them to the Dementor.</li>' +
+    '<li>Roll a <strong>7</strong> and anyone over their hand limit feeds half their cards to the Dementor. The limit is <strong>7</strong> unless you have warded your holdings.</li>' +
     '<li>The roller then banishes the Dementor to a new region and steals a card from someone there. That region yields nothing until the Dementor moves on.</li>' +
+    '</ul>' +
+    '<h3>Shield Charms</h3><ul>' +
+    '<li>Bind a Shield Charm to a Castle or Citadel for ' + costText(COSTS.ward) + '. Each raises your hand limit by <strong>2</strong>, so a seven costs you nothing until you are over it.</li>' +
+    '<li>Three may be bound in all, taking the limit to <strong>13</strong>. A ward stays put when the Castle beneath it becomes a Citadel.</li>' +
+    '<li>Your current holding and limit sit beside <em>Your Hand</em>.</li>' +
     '</ul>' +
     '<h3>Spell Scrolls</h3><ul>' +
     Object.keys(SPELLS).map((k) => '<li><strong>' + SPELLS[k].icon + ' ' + SPELLS[k].name + '</strong> — ' + SPELLS[k].desc + '</li>').join('') +
@@ -880,7 +977,7 @@ function showRules() {
     '</ul>' +
     '<h3>Shortcuts</h3><ul>' +
     '<li><code>R</code> roll · <code>E</code> end turn · <code>T</code> bank trade · <code>O</code> offer a trade · <code>S</code> stats</li>' +
-    '<li><code>1</code>–<code>4</code> pick a thing to build · <code>Esc</code> cancel or close</li>' +
+    '<li><code>1</code>–<code>6</code> pick a thing to build · <code>Esc</code> cancel or close</li>' +
     '</ul>' +
     '<h3>Titles</h3><ul>' +
     '<li><strong>Longest Floo Network</strong> — 5+ connected routes, +2 points. An opponent’s building breaks the chain.</li>' +
@@ -973,7 +1070,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (key === 't') press('btn-bank');
     else if (key === 'o') press('btn-offer');
     else if (key === 's') press('btn-stats');
-    else if ('1234'.includes(key)) {
+    else if ('123456'.includes(key)) {
       const btn = document.querySelectorAll('.build-btn')[Number(key) - 1];
       if (btn && !btn.disabled) btn.click();
     }

@@ -14,10 +14,22 @@ const COSTS = {
   road:    { wandwood: 1, runestone: 1 },
   cottage: { wandwood: 1, runestone: 1, owls: 1, mandrake: 1 },
   castle:  { mandrake: 2, galleons: 3 },
+  citadel: { runestone: 1, mandrake: 2, galleons: 3 },
+  ward:    { runestone: 2 },
   spell:   { owls: 1, mandrake: 1, galleons: 1 },
 };
 
-const PIECE_NAMES = { road: 'Floo Route', cottage: 'Cottage', castle: 'Castle' };
+const PIECE_NAMES = {
+  road: 'Floo Route', cottage: 'Cottage', castle: 'Castle',
+  citadel: 'Citadel', ward: 'Shield Charm',
+};
+
+// Victory points and per-roll yield by building.
+const BUILDING_VP = { cottage: 1, castle: 2, citadel: 3 };
+const BUILDING_YIELD = { cottage: 1, castle: 2, citadel: 3 };
+
+const MAX_WARDS = 3;
+const BASE_HAND_LIMIT = 7;
 
 const SPELLS = {
   auror:    { name: 'Auror',        icon: '\u{1F52E}', desc: 'Banish the Dementor to another region and steal one card from a player there.' },
@@ -32,7 +44,7 @@ const MERLIN_TITLES = [
   "The Marauder's Map", 'Prefect’s Badge',
 ];
 
-const VP_TO_WIN = 10;
+const VP_TO_WIN = 12;
 const BANK_PER_RESOURCE = 19;
 
 /* ---------- state ---------- */
@@ -76,7 +88,7 @@ function createGame(playerConfigs, seed) {
     aurorsPlayed: 0,
     playedSpellThisTurn: false,
     offeredThisTurn: false,
-    pieces: { road: 15, cottage: 5, castle: 4 },
+    pieces: { road: 15, cottage: 5, castle: 4, citadel: 3, ward: MAX_WARDS },
     ports: [],
   }));
 
@@ -134,6 +146,15 @@ function logMsg(text, cls) {
 function currentPlayer() { return state.players[state.current]; }
 
 function totalCards(p) { return RES_KEYS.reduce((s, k) => s + p.res[k], 0); }
+
+function wardCount(playerId) {
+  return Object.values(state.buildings).filter((b) => b.owner === playerId && b.ward).length;
+}
+
+// Each Shield Charm lets a house hold two more cards through a seven.
+function handLimit(playerId) {
+  return BASE_HAND_LIMIT + 2 * wardCount(playerId);
+}
 
 function canAfford(p, cost) { return Object.keys(cost).every((k) => p.res[k] >= cost[k]); }
 
@@ -199,6 +220,21 @@ function validCastleSpots(playerId) {
   );
 }
 
+function validCitadelSpots(playerId) {
+  return Object.keys(state.buildings).filter(
+    (vk) => state.buildings[vk].owner === playerId && state.buildings[vk].type === 'castle'
+  );
+}
+
+// A Shield Charm may be laid on any fortified holding that has none.
+function validWardSpots(playerId) {
+  if (wardCount(playerId) >= MAX_WARDS) return [];
+  return Object.keys(state.buildings).filter((vk) => {
+    const b = state.buildings[vk];
+    return b.owner === playerId && b.type !== 'cottage' && !b.ward;
+  });
+}
+
 function validRoadSpots(playerId, restrictToVertex) {
   return Object.keys(state.board.edges).filter((ek) => {
     if (state.roads[ek]) return false;
@@ -232,6 +268,23 @@ function placeCastle(playerId, vk) {
   p.pieces.cottage++;
   p.pieces.castle--;
   logMsg(p.name + ' upgrades a Cottage into a Castle.');
+}
+
+function placeCitadel(playerId, vk) {
+  const p = state.players[playerId];
+  pay(p, COSTS.citadel);
+  state.buildings[vk].type = 'citadel';
+  p.pieces.castle++;
+  p.pieces.citadel--;
+  logMsg(p.name + ' raises a Citadel — three cards from every harvest.');
+}
+
+function placeWard(playerId, vk) {
+  const p = state.players[playerId];
+  pay(p, COSTS.ward);
+  state.buildings[vk].ward = true;
+  p.pieces.ward--;
+  logMsg(p.name + ' binds a Shield Charm — they may now hold ' + handLimit(playerId) + ' cards through a seven.');
 }
 
 function placeRoad(playerId, ek, free) {
@@ -270,7 +323,7 @@ function produce(sum) {
     hex.corners.forEach((vk) => {
       const b = state.buildings[vk];
       if (!b) return;
-      owed[b.owner][hex.res] += b.type === 'castle' ? 2 : 1;
+      owed[b.owner][hex.res] += BUILDING_YIELD[b.type] || 1;
     });
   });
 
@@ -297,7 +350,7 @@ function produce(sum) {
 function handleSeven() {
   logMsg('A seven! The Dementor stirs.', 'warn');
   state.returnPhase = 'main';
-  state.discardQueue = state.players.filter((p) => totalCards(p) > 7).map((p) => p.id);
+  state.discardQueue = state.players.filter((p) => totalCards(p) > handLimit(p.id)).map((p) => p.id);
   if (state.discardQueue.length) {
     state.phase = 'discard';
   } else {
@@ -535,7 +588,7 @@ function victoryPoints(playerId, includeHidden) {
   let vp = 0;
   Object.values(state.buildings).forEach((b) => {
     if (b.owner !== playerId) return;
-    vp += b.type === 'castle' ? 2 : 1;
+    vp += BUILDING_VP[b.type] || 1;
   });
   if (state.longestRoad.owner === playerId) vp += 2;
   if (state.largestArmy.owner === playerId) vp += 2;
