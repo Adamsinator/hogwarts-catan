@@ -65,6 +65,8 @@ function renderDefs(svg) {
 ------------------------------------------------------------------ */
 
 const TERRAIN_ART = {
+  lake:       { top: '#20518c', bottom: '#0c1c3c' },
+  lode:       { top: '#a8842a', bottom: '#4d3a0c' },
   forest:     { top: '#37764b', bottom: '#12301f' },
   quarry:     { top: '#8d4d2d', bottom: '#4a2615' },
   owlery:     { top: '#4e7aa8', bottom: '#20364d' },
@@ -215,9 +217,37 @@ function paintAzkaban(g) {
   el('path', { d: 'M -60 18 q 20 -8 42 -2 q 24 6 46 -4 l 0 12 l -88 0 z', fill: '#0a0a16', opacity: 0.8 }, g);
 }
 
+function paintLake(g) {
+  [-40, -22, -4, 14, 32, 50].forEach((y, i) => {
+    el('path', {
+      d: 'M -62 ' + y + ' q 13 -6 26 0 t 26 0 t 26 0 t 26 0',
+      stroke: '#5f9adf', 'stroke-width': 2.2, fill: 'none', opacity: 0.18 + (i % 2) * 0.1,
+    }, g);
+  });
+  el('ellipse', { cx: 16, cy: -30, rx: 13, ry: 5, fill: '#9fc9ff', opacity: 0.16 }, g);
+  el('ellipse', { cx: -22, cy: 26, rx: 16, ry: 6, fill: '#9fc9ff', opacity: 0.12 }, g);
+}
+
+function paintLode(g) {
+  el('path', { d: 'M -62 18 L -34 0 L -6 14 L 22 -4 L 62 12 L 62 60 L -62 60 Z', fill: '#6d5416' }, g);
+  el('path', { d: 'M -62 34 L -30 20 L 0 32 L 30 18 L 62 30 L 62 60 L -62 60 Z', fill: '#7d621b' }, g);
+  // mine mouth, timbered
+  el('path', { d: 'M -46 40 L -46 6 L -18 6 L -18 40 Z', fill: '#3b2c0c' }, g);
+  el('path', { d: 'M -42 40 L -42 12 Q -32 2 -22 12 L -22 40 Z', fill: '#171208' }, g);
+  el('rect', { x: -49, y: 2, width: 34, height: 6, fill: '#5b4512' }, g);
+  // spoil of gold
+  [[8, 34, 9], [26, 42, 8], [-4, 46, 7], [40, 30, 7], [16, 22, 6]].forEach(([x, y, r]) => {
+    el('ellipse', { cx: x, cy: y, rx: r, ry: r * 0.45, fill: '#f0d066', stroke: '#8a6c14', 'stroke-width': 1.2 }, g);
+  });
+  [[-30, -30], [4, -40], [34, -22]].forEach(([x, y]) => {
+    el('path', { d: 'M ' + x + ' ' + y + ' l 4 -9 l 4 9 l -4 4 z', fill: '#ffe9a8', opacity: 0.75 }, g);
+  });
+}
+
 const TERRAIN_PAINTERS = {
   forest: paintForest, quarry: paintQuarry, owlery: paintOwlery,
   greenhouse: paintGreenhouse, gringotts: paintGringotts, azkaban: paintAzkaban,
+  lake: paintLake, lode: paintLode,
 };
 
 // Fit the viewBox to whatever the board actually occupies, ports included.
@@ -369,10 +399,21 @@ function roadGeom(e) {
 function drawRoads(g) {
   Object.keys(state.roads).forEach((ek) => {
     const e = state.board.edges[ek];
-    const owner = state.players[state.roads[ek].owner];
+    const r = state.roads[ek];
+    const owner = state.players[r.owner];
     const gm = roadGeom(e);
     el('line', { ...gm, stroke: '#080a14', 'stroke-width': 13, 'stroke-linecap': 'round' }, g);
     el('line', { ...gm, stroke: owner.color, 'stroke-width': 8.5, 'stroke-linecap': 'round' }, g);
+    if (routeKind(r) === 'broom') {
+      // a flight path: bright dashes with a bristled tail
+      el('line', { ...gm, stroke: '#ffe9a8', 'stroke-width': 3, 'stroke-linecap': 'round',
+        'stroke-dasharray': '7 6', opacity: 0.9 }, g);
+      const mx = (gm.x1 + gm.x2) / 2, my = (gm.y1 + gm.y2) / 2;
+      const ang = Math.atan2(gm.y2 - gm.y1, gm.x2 - gm.x1) * 180 / Math.PI;
+      const b = el('g', { transform: 'translate(' + mx.toFixed(1) + ',' + my.toFixed(1) + ') rotate(' + ang.toFixed(1) + ')' }, g);
+      el('path', { d: 'M -9 0 L 5 0', stroke: '#f3ead2', 'stroke-width': 2.4, 'stroke-linecap': 'round' }, b);
+      el('path', { d: 'M 5 0 L 11 -4 M 5 0 L 12 0 M 5 0 L 11 4', stroke: '#f3ead2', 'stroke-width': 1.8, 'stroke-linecap': 'round' }, b);
+    }
   });
 }
 

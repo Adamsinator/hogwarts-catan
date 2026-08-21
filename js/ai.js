@@ -56,7 +56,7 @@ const AI = (function () {
   function boardScarcity() {
     const total = {};
     RES_KEYS.forEach((k) => { total[k] = 0; });
-    state.board.hexes.forEach((h) => { if (h.res) total[h.res] += h.pips; });
+    state.board.hexes.forEach((h) => { if (h.res && total[h.res] !== undefined) total[h.res] += h.pips; });
     return total;
   }
 
@@ -78,11 +78,26 @@ const AI = (function () {
       const supply = boardScarcity();
       v.hexes.forEach((hid) => {
         const h = state.board.hexes[hid];
-        if (!h.res) return;
+        if (!h.res || supply[h.res] === undefined) return;   // a Lode is scored below
         if (!owned.has(h.res)) score += c.scarcity;
         // rarer on the board => more valuable to hold
         score += Math.max(0, (14 - supply[h.res])) * (c.scarcity / 14);
       });
+    }
+    // A Goblin Lode pays in any resource, so its pips are worth more than most.
+    v.hexes.forEach((hid) => {
+      const h = state.board.hexes[hid];
+      if (h.res === 'gold') score += h.pips * 4;
+      if (h.island && !state.players[playerId].islands.includes(h.island)) score += 16;
+    });
+    // On the voyage map a berth on the shore is what makes a crossing possible
+    // at all — a flight can only launch from your own coastal holding. Inland
+    // junctions always out-produce the shore, so without a real premium here
+    // the islands never get visited.
+    if (state.scenario === 'voyage' && v.hexes.some((hid) => isSea(state.board.hexes[hid]))) {
+      const me = state.players[playerId];
+      const unclaimed = state.board.hexes.some((h) => h.island > 0 && !me.islands.includes(h.island));
+      score += (unclaimed && me.pieces.broom > 0) ? 38 : 6;
     }
     if (c.portValue && v.port) {
       score += v.port === 'any' ? c.portValue * 0.6 : c.portValue;
@@ -153,21 +168,141 @@ const AI = (function () {
     return len >= 5 && len > state.longestRoad.length;
   }
 
-  function bestRoadSpot(playerId) {
+  function bestRoadSpot(playerId, kind) {
     const c = cfg(playerId);
-    const options = validRoadSpots(playerId);
+    const options = validRoadSpots(playerId, null, kind);
     return pickBest(options, (ek) => {
       const e = state.board.edges[ek];
       let score = 1;
       [e.a, e.b].forEach((v) => {
-        if (vertexIsFree(v)) score = Math.max(score, vertexValue(v, playerId));
+        if (vertexIsFree(v) && vertexTouchesLand(v)) score = Math.max(score, vertexValue(v, playerId));
         state.board.vertices[v].adj.forEach((nb) => {
-          if (vertexIsFree(nb)) score = Math.max(score, vertexValue(nb, playerId) * 0.55);
+          if (vertexIsFree(nb) && vertexTouchesLand(nb)) score = Math.max(score, vertexValue(nb, playerId) * 0.55);
         });
       });
+      if (kind === 'broom') score += Math.max(islandPull(e.a, playerId), islandPull(e.b, playerId));
       if (c.chaseRoad && roadClaimsLongest(playerId, ek)) score += 160;
       return score;
     }, c.noise);
+  }
+
+  // How keenly this junction pulls a flight toward land not yet claimed.
+  function islandPull(vk, playerId) {
+    if (state.scenario !== 'voyage') return 0;
+    const p = state.players[playerId];
+    const targets = state.board.hexes.filter((h) => h.island > 0 && !p.islands.includes(h.island));
+    if (!targets.length || p.pieces.cottage <= 0) return 0;
+    const v = state.board.vertices[vk];
+    const d = Math.min(...targets.map((h) => Math.hypot(v.x - h.cx, v.y - h.cy)));
+    return Math.max(0, 620 - d) * 0.45;
+  }
+
+  // How far this junction is from land the house has not yet claimed.
+  function islandDist(vk, playerId) {
+    const p = state.players[playerId];
+    const targets = state.board.hexes.filter((h) => h.island > 0 && !p.islands.includes(h.island));
+    if (!targets.length) return Infinity;
+    const v = state.board.vertices[vk];
+    return Math.min(...targets.map((h) => Math.hypot(v.x - h.cx, v.y - h.cy)));
+  }
+
+  // The furthest point the house has already reached toward that land.
+  function flightFrontier(playerId) {
+    let best = Infinity;
+    Object.keys(state.buildings).forEach((vk) => {
+      if (state.buildings[vk].owner === playerId) best = Math.min(best, islandDist(vk, playerId));
+    });
+    Object.keys(state.roads).forEach((ek) => {
+      const r = state.roads[ek];
+      if (r.owner !== playerId || routeKind(r) !== 'broom') return;
+      const e = state.board.edges[ek];
+      best = Math.min(best, islandDist(e.a, playerId), islandDist(e.b, playerId));
+    });
+    return best;
+  }
+
+  // Is there already an island junction we could simply settle?
+  function islandSpotReady(playerId) {
+    const p = state.players[playerId];
+    return validCottageSpots(playerId, false).some((vk) =>
+      state.board.vertices[vk].hexes.some((hid) => {
+        const h = state.board.hexes[hid];
+        return h.island > 0 && !p.islands.includes(h.island);
+      }));
+  }
+
+  // Only fly if the hop actually closes the gap — otherwise a house drifts
+  // around the lake spending brooms and never making landfall.
+  function bestFlightSpot(playerId) {
+    const c = cfg(playerId);
+    const frontier = flightFrontier(playerId);
+    const options = validRoadSpots(playerId, null, 'broom').filter((ek) => {
+      const e = state.board.edges[ek];
+      return Math.min(islandDist(e.a, playerId), islandDist(e.b, playerId)) < frontier - 1;
+    });
+    if (!options.length) return null;
+    return pickBest(options, (ek) => {
+      const e = state.board.edges[ek];
+      return -Math.min(islandDist(e.a, playerId), islandDist(e.b, playerId));
+    }, c.noise);
+  }
+
+  // Which way out of the harbour: a Floo Route on land, or a Broomstick over water.
+  function bestRouteMove(p, c, mayTrade, closing) {
+    let bestMove = null, bestScore = -Infinity;
+
+    if (p.pieces.road > 0) {
+      const spot = bestRoadSpot(p.id, 'road');
+      if (spot) {
+        const claims = c.chaseRoad && roadClaimsLongest(p.id, spot);
+        if (claims || (p.pieces.cottage > 0 && !closing)) {
+          const allow = mayTrade && (claims || totalCards(p) > 5);
+          if (affordVia(p, COSTS.road, allow)) {
+            const e = state.board.edges[spot];
+            let score = claims ? 200 : 0;
+            [e.a, e.b].forEach((v) => {
+              if (vertexIsFree(v) && vertexTouchesLand(v)) score = Math.max(score, vertexValue(v, p.id));
+              state.board.vertices[v].adj.forEach((nb) => {
+                if (vertexIsFree(nb) && vertexTouchesLand(nb)) score = Math.max(score, vertexValue(nb, p.id) * 0.55);
+              });
+            });
+            bestScore = score;
+            bestMove = { type: 'road', target: spot };
+          }
+        }
+      }
+    }
+
+    if (state.scenario === 'voyage' && p.pieces.broom > 0 && p.pieces.cottage > 0 && !closing) {
+      const spot = bestFlightSpot(p.id);
+      if (spot && affordVia(p, COSTS.broom, mayTrade)) {
+        const e = state.board.edges[spot];
+        const score = 90 + Math.max(islandPull(e.a, p.id), islandPull(e.b, p.id));
+        if (score > bestScore) { bestScore = score; bestMove = { type: 'broom', target: spot }; }
+      }
+    }
+
+    return bestMove;
+  }
+
+  // Spend a Lode payout on whatever the next piece is short of.
+  function chooseGold(playerId, count) {
+    const p = state.players[playerId];
+    const picks = {};
+    RES_KEYS.forEach((k) => { picks[k] = 0; });
+    const goal = COSTS[currentGoal(p)];
+    for (let i = 0; i < count; i++) {
+      const short = RES_KEYS
+        .filter((k) => p.res[k] + picks[k] < (goal[k] || 0) && state.bank[k] - picks[k] > 0)
+        .sort((a, b) => ((goal[b] || 0) - p.res[b] - picks[b]) - ((goal[a] || 0) - p.res[a] - picks[a]))[0];
+      const fallback = RES_KEYS
+        .filter((k) => state.bank[k] - picks[k] > 0)
+        .sort((a, b) => (p.res[a] + picks[a]) - (p.res[b] + picks[b]))[0];
+      const pick = short || fallback;
+      if (!pick) break;
+      picks[pick]++;
+    }
+    return picks;
   }
 
   /* ---------- bank trading ---------- */
@@ -299,6 +434,7 @@ const AI = (function () {
     if (p.pieces.castle > 0 && validCastleSpots(p.id).length) return 'castle';
     if (p.pieces.cottage > 0 && validCottageSpots(p.id, false).length) return 'cottage';
     if (p.pieces.road > 0 && validRoadSpots(p.id).length) return 'road';
+    if (p.pieces.broom > 0 && validRoadSpots(p.id, null, 'broom').length) return 'broom';
     return 'spell';
   }
 
@@ -329,6 +465,23 @@ const AI = (function () {
     if (p.pieces.castle > 0) {
       const spot = bestCastleSpot(p.id);
       if (spot && affordVia(p, COSTS.castle, mayTrade)) return { type: 'castle', target: spot };
+    }
+
+    // The crossing. Ranked above a plain Cottage because an island cottage is
+    // worth two points, not one — and once a flight is begun, abandoning it
+    // strands the brooms already paid for.
+    if (state.scenario === 'voyage' && p.pieces.cottage > 0 && p.pieces.broom > 0) {
+      const unclaimed = state.board.hexes.some((h) => h.island > 0 && !p.islands.includes(h.island));
+      const flying = Object.keys(state.roads).some((ek) =>
+        state.roads[ek].owner === p.id && routeKind(state.roads[ek]) === 'broom');
+      const berth = Object.keys(state.buildings).some((vk) =>
+        state.buildings[vk].owner === p.id &&
+        state.board.vertices[vk].hexes.some((h) => isSea(state.board.hexes[h])));
+      // If a landing site is already in reach, settle it rather than fly on.
+      if (unclaimed && (flying || berth) && !islandSpotReady(p.id)) {
+        const onward = bestRouteMove(p, c, mayTrade, closing);
+        if (onward && onward.type === 'broom') return onward;
+      }
     }
     // Cottages.
     if (p.pieces.cottage > 0) {
@@ -425,6 +578,7 @@ const AI = (function () {
     bestSetupVertex, bestSetupRoad, bestDementorHex, richestTarget,
     bestCottageSpot, bestCastleSpot, bestCitadelSpot, bestWardSpot, bestRoadSpot, roadClaimsLongest,
     considerSpell, nextBuild, evaluateTradeOffer, proposeTrade, currentGoal, vertexValue,
+    bestRouteMove, chooseGold, bestFlightSpot, islandSpotReady,
     planBankTrades, cfg,
   };
 })();

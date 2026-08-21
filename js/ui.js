@@ -114,6 +114,8 @@ function renderSidebar() {
   $('turn-crest').textContent = p.crest;
   $('turn-name').textContent = p.name;
   $('turn-vp').textContent = victoryPoints(p.id, true);
+  const target = $('vp-target');
+  if (target) target.textContent = state.vpTarget || VP_TO_WIN;
 
   const hints = {
     setup: state.setupRoadFrom ? 'Place a Floo Route' : 'Place a Cottage',
@@ -152,13 +154,19 @@ function renderSidebar() {
 
   // build buttons
   const canAct = human && state.phase === 'main' && !state.pending;
-  const defs = [
+  let defs = [
     { kind: 'road', label: 'Floo Route', cost: COSTS.road, spots: () => validRoadSpots(p.id).length, left: p.pieces.road },
+  ];
+  if (state.scenario === 'voyage') {
+    defs.push({ kind: 'broom', label: 'Broomstick', cost: COSTS.broom,
+      spots: () => validRoadSpots(p.id, null, 'broom').length, left: p.pieces.broom });
+  }
+  defs.push(...[
     { kind: 'cottage', label: 'Cottage', cost: COSTS.cottage, spots: () => validCottageSpots(p.id, false).length, left: p.pieces.cottage },
     { kind: 'castle', label: 'Castle', cost: COSTS.castle, spots: () => validCastleSpots(p.id).length, left: p.pieces.castle },
     { kind: 'citadel', label: 'Citadel', cost: COSTS.citadel, spots: () => validCitadelSpots(p.id).length, left: p.pieces.citadel },
     { kind: 'ward', label: 'Shield Charm', cost: COSTS.ward, spots: () => validWardSpots(p.id).length, left: p.pieces.ward },
-  ];
+  ]);
   const grid = $('build-actions');
   grid.innerHTML = '';
   defs.forEach((d) => {
@@ -276,7 +284,9 @@ function boardHandlers() {
   } else if (state.phase === 'moveDementor') {
     h.hexClickable = (id) => id !== state.dementor;
   } else if (state.pending) {
-    if (state.pending.kind === 'road') h.edgeTargets = validRoadSpots(p.id);
+    if (state.pending.kind === 'road' || state.pending.kind === 'broom') {
+      h.edgeTargets = validRoadSpots(p.id, null, state.pending.kind);
+    }
     else if (state.pending.kind === 'cottage') h.vertexTargets = validCottageSpots(p.id, false);
     else if (state.pending.kind === 'castle') h.vertexTargets = validCastleSpots(p.id);
     else if (state.pending.kind === 'citadel') h.vertexTargets = validCitadelSpots(p.id);
@@ -315,11 +325,12 @@ function onEdge(ek) {
   if (state.phase === 'setup') {
     placeRoad(p.id, ek, true);
     advanceSetup();
-  } else if (state.pending && state.pending.kind === 'road') {
-    placeRoad(p.id, ek, state.pending.free);
+  } else if (state.pending && (state.pending.kind === 'road' || state.pending.kind === 'broom')) {
+    const kind = state.pending.kind;
+    placeRoad(p.id, ek, state.pending.free, kind);
     if (state.pending.free) {
       state.pending.remaining--;
-      if (state.pending.remaining <= 0 || validRoadSpots(p.id).length === 0) state.pending = null;
+      if (state.pending.remaining <= 0 || validRoadSpots(p.id, null, kind).length === 0) state.pending = null;
     } else {
       state.pending = null;
     }
@@ -585,6 +596,33 @@ function resolveOffer(accepted) {
   tick();
 }
 
+function showGoldChoice(claim) {
+  const p = state.players[claim.player];
+  const m = modal(
+    '<h2>\u{1FA99} The Goblin Lode</h2>' +
+    '<p class="sub"><strong>' + p.name + '</strong> may take <strong>' + claim.count + '</strong> ' +
+      (claim.count === 1 ? 'card' : 'cards') + ' of any kind from the supply.</p>' +
+    '<div id="gold-picks"></div>' +
+    '<div class="actions"><span id="gold-count" class="sub"></span>' +
+    '<button class="primary" data-go disabled>Take</button></div>',
+    { dismissible: false }
+  );
+  const limits = {};
+  RES_KEYS.forEach((k) => { limits[k] = Math.min(claim.count, state.bank[k]); });
+  const st = makeSteppers(limits, update);
+  m.root.querySelector('#gold-picks').replaceWith(st.node);
+  const go = m.root.querySelector('[data-go]');
+  const counter = m.root.querySelector('#gold-count');
+  const most = Math.min(claim.count, RES_KEYS.reduce((s2, k) => s2 + state.bank[k], 0));
+  function update(v) {
+    const t = bundleTotal(v);
+    counter.textContent = t + ' / ' + most + ' chosen';
+    go.disabled = t !== most;
+  }
+  update(st.values);
+  go.addEventListener('click', () => { m.close(); takeGold(claim.player, st.values); tick(); });
+}
+
 function showIncomingOffer() {
   const o = state.offer;
   const from = state.players[o.from];
@@ -616,6 +654,19 @@ function tick() {
   save();
 
   if (state.phase === 'over') { showVictory(); return; }
+
+  if (state.goldQueue && state.goldQueue.length) {
+    const claim = state.goldQueue[0];
+    if (state.players[claim.player].isAI) {
+      aiTimer = setTimeout(() => {
+        takeGold(claim.player, AI.chooseGold(claim.player, claim.count));
+        tick();
+      }, PACE.action);
+    } else {
+      showGoldChoice(claim);
+    }
+    return;
+  }
 
   if (state.offer) {
     const to = state.players[state.offer.toId];
@@ -733,7 +784,7 @@ function aiStep() {
       else if (move.type === 'ward') placeWard(p.id, move.target);
       else if (move.type === 'castle') placeCastle(p.id, move.target);
       else if (move.type === 'cottage') placeCottage(p.id, move.target, false);
-      else if (move.type === 'road') placeRoad(p.id, move.target, false);
+      else if (move.type === 'road' || move.type === 'broom') placeRoad(p.id, move.target, false, move.type);
       else if (move.type === 'spell') buySpell(p.id);
       if (checkVictory()) return tick();
       return tick();
@@ -770,11 +821,11 @@ function showVictory() {
     '<button class="primary" data-new>New Game</button></div>',
     { dismissible: false }
   );
-  const configs = state.configs, seed = state.seed;
+  const configs = state.configs, seed = state.seed, mode = state.scenario;
   m.root.querySelector('[data-new]').addEventListener('click', () => { m.close(); showSetup(); });
   m.root.querySelector('[data-again]').addEventListener('click', () => {
     m.close();
-    createGame(configs, seed);
+    createGame(configs, seed, mode);
     tick();
   });
   localStorage.removeItem(SAVE_KEY);
@@ -904,12 +955,26 @@ function showSetup() {
 
   const m = modal(
     '<h2>⚡ Settlers of Hogsmeade</h2>' +
-    '<p class="sub">Choose your houses. Two to four may play.</p>' +
+    '<p class="sub">Choose a map and your houses. Two to four may play.</p>' +
+    '<div class="scenario-pick">' +
+      '<button class="pick sel" data-map="classic">' +
+        '<span><strong>Hogsmeade Valley</strong><small>The classic board. First to ' + VP_TO_WIN + '.</small></span></button>' +
+      '<button class="pick" data-map="voyage">' +
+        '<span><strong>Broomstick Voyage</strong><small>Islands across the Black Lake, with Goblin Lodes. First to ' + VOYAGE_VP + '.</small></span></button>' +
+    '</div>' +
     '<div class="setup-players">' + rows + '</div>' +
     '<div class="actions"><button class="ghost" data-rules>Rules</button>' +
     '<button class="primary" data-start>Begin the Term</button></div>',
     { dismissible: false }
   );
+
+  let scenario = 'classic';
+  m.root.querySelectorAll('[data-map]').forEach((b) => {
+    b.addEventListener('click', () => {
+      scenario = b.dataset.map;
+      m.root.querySelectorAll('[data-map]').forEach((x) => x.classList.toggle('sel', x === b));
+    });
+  });
 
   m.root.querySelector('[data-rules]').addEventListener('click', showRules);
   m.root.querySelector('[data-start]').addEventListener('click', () => {
@@ -926,7 +991,7 @@ function showSetup() {
       name: c.name,
       isAI: c.type.startsWith('ai'),
       level: c.type.split(':')[1] || 'medium',
-    })));
+    })), null, scenario);
     tick();
   });
 }
@@ -956,6 +1021,15 @@ function showRules() {
     '<h3>The Dementor</h3><ul>' +
     '<li>Roll a <strong>7</strong> and anyone over their hand limit feeds half their cards to the Dementor. The limit is <strong>7</strong> unless you have warded your holdings.</li>' +
     '<li>The roller then banishes the Dementor to a new region and steals a card from someone there. That region yields nothing until the Dementor moves on.</li>' +
+    '</ul>' +
+    '<h3>Broomstick Voyage</h3><ul>' +
+    '<li>The second map sets the valley in the middle of the Black Lake, with three islands beyond the water.</li>' +
+    '<li><strong>Broomstick Route</strong> — ' + costText(COSTS.broom) + '. Flies over water where a Floo Route cannot go. A shoreline may take either.</li>' +
+    '<li>A flight can only launch from <em>your own</em> coastal Cottage, Castle or Citadel, and a Floo Route and a Broomstick Route only join at one of your buildings.</li>' +
+    '<li>Opening Cottages are placed on the mainland — the islands must be flown to.</li>' +
+    '<li>The first house to settle each island scores an extra <strong>' + ISLAND_BONUS_VP + ' point</strong>.</li>' +
+    '<li>The <strong>Goblin Lode</strong> is a gold mine: when its number rolls it pays nothing in particular, and you take <em>any</em> resources you like from the supply — one per Cottage, two per Castle, three per Citadel.</li>' +
+    '<li>Both routes count together toward the Longest Floo Network.</li>' +
     '</ul>' +
     '<h3>Shield Charms</h3><ul>' +
     '<li>Bind a Shield Charm to a Castle or Citadel for ' + costText(COSTS.ward) + '. Each raises your hand limit by <strong>2</strong>, so a seven costs you nothing until you are over it.</li>' +
@@ -1070,7 +1144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (key === 't') press('btn-bank');
     else if (key === 'o') press('btn-offer');
     else if (key === 's') press('btn-stats');
-    else if ('123456'.includes(key)) {
+    else if ('1234567'.includes(key)) {
       const btn = document.querySelectorAll('.build-btn')[Number(key) - 1];
       if (btn && !btn.disabled) btn.click();
     }

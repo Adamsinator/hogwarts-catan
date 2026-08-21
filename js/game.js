@@ -12,6 +12,7 @@ const HOUSES = [
 
 const COSTS = {
   road:    { wandwood: 1, runestone: 1 },
+  broom:   { wandwood: 1, owls: 1 },
   cottage: { wandwood: 1, runestone: 1, owls: 1, mandrake: 1 },
   castle:  { mandrake: 2, galleons: 3 },
   citadel: { runestone: 1, mandrake: 2, galleons: 3 },
@@ -20,7 +21,7 @@ const COSTS = {
 };
 
 const PIECE_NAMES = {
-  road: 'Floo Route', cottage: 'Cottage', castle: 'Castle',
+  road: 'Floo Route', broom: 'Broomstick Route', cottage: 'Cottage', castle: 'Castle',
   citadel: 'Citadel', ward: 'Shield Charm',
 };
 
@@ -29,6 +30,7 @@ const BUILDING_VP = { cottage: 1, castle: 2, citadel: 3 };
 const BUILDING_YIELD = { cottage: 1, castle: 2, citadel: 3 };
 
 const MAX_WARDS = 3;
+const ISLAND_BONUS_VP = 1;   // for being first to settle each outer island
 const BASE_HAND_LIMIT = 7;
 
 const SPELLS = {
@@ -45,6 +47,7 @@ const MERLIN_TITLES = [
 ];
 
 const VP_TO_WIN = 12;
+const VOYAGE_VP = 14;   // the voyage map offers island bonuses on top
 const BANK_PER_RESOURCE = 19;
 
 /* ---------- state ---------- */
@@ -67,9 +70,10 @@ function emptyRes() {
   return r;
 }
 
-function createGame(playerConfigs, seed) {
+function createGame(playerConfigs, seed, scenario) {
   const usedSeed = seed || (Math.floor(Math.random() * 2 ** 31) >>> 0);
-  const board = buildBoard(usedSeed);
+  const mode = scenario === 'voyage' ? 'voyage' : 'classic';
+  const board = buildBoard(usedSeed, mode);
   const rng = mulberry32((usedSeed ^ 0x9e3779b9) >>> 0);
 
   const players = playerConfigs.map((cfg, i) => ({
@@ -88,8 +92,9 @@ function createGame(playerConfigs, seed) {
     aurorsPlayed: 0,
     playedSpellThisTurn: false,
     offeredThisTurn: false,
-    pieces: { road: 15, cottage: 5, castle: 4, citadel: 3, ward: MAX_WARDS },
+    pieces: { road: 15, broom: 15, cottage: 5, castle: 4, citadel: 3, ward: MAX_WARDS },
     ports: [],
+    islands: [],   // outer islands this house has settled first
   }));
 
   const setupOrder = [];
@@ -104,6 +109,8 @@ function createGame(playerConfigs, seed) {
 
   state = {
     seed: usedSeed,
+    scenario: mode,
+    vpTarget: mode === 'voyage' ? VOYAGE_VP : VP_TO_WIN,
     configs: playerConfigs,   // kept so a rematch can reuse board + houses
     board,
     players,
@@ -127,6 +134,7 @@ function createGame(playerConfigs, seed) {
     trade: null,
     winner: null,
     offer: null,              // a trade an AI has put to another house
+    goldQueue: [],            // houses owed a free pick from a Goblin Lode
     stats: { rolls: rollTally, harvested: players.map(() => 0), sevens: 0 },
     log: [],
     turnCount: 0,
@@ -169,6 +177,28 @@ function grant(p, resKey, n) {
   return avail;
 }
 
+/* ---------- terrain ---------- */
+function hexIsSea(hexId) { return isSea(state.board.hexes[hexId]); }
+
+function edgeTouchesSea(ek) {
+  return state.board.edges[ek].hexes.some(hexIsSea);
+}
+function edgeTouchesLand(ek) {
+  return state.board.edges[ek].hexes.some((id) => !hexIsSea(id));
+}
+
+// A Floo Route needs ground under it; a Broomstick Route needs open water.
+// A shoreline edge will take either.
+function edgeAllows(ek, kind) {
+  const e = state.board.edges[ek];
+  if (!e.hexes.length) return false;
+  return kind === 'broom' ? edgeTouchesSea(ek) : edgeTouchesLand(ek);
+}
+
+function vertexTouchesLand(vk) {
+  return state.board.vertices[vk].hexes.some((id) => !hexIsSea(id));
+}
+
 /* ---------- junction yield ---------- */
 function vertexYield(vk) {
   const v = state.board.vertices[vk];
@@ -188,7 +218,7 @@ function vertexYieldText(vk) {
   if (!y.hexes.length) return 'Yields nothing';
   const parts = y.hexes
     .sort((a, b) => b.pips - a.pips)
-    .map((h) => RESOURCES[h.res].label + ' on ' + h.number);
+    .map((h) => (h.res === 'gold' ? 'Goblin Lode' : RESOURCES[h.res].label) + ' on ' + h.number);
   let text = y.pips + '/36 per roll — ' + parts.join(', ');
   if (y.port) text += '\n' + portLabel(y.port);
   return text;
@@ -200,17 +230,31 @@ function vertexIsFree(vk) {
   return state.board.vertices[vk].adj.every((n) => !state.buildings[n]);
 }
 
-function playerTouchesVertex(playerId, vk) {
+function playerTouchesVertex(playerId, vk, kind) {
   return state.board.vertices[vk].adj.some((n) => {
-    const ek = ekey(vk, n);
-    return state.roads[ek] && state.roads[ek].owner === playerId;
+    const r = state.roads[ekey(vk, n)];
+    if (!r || r.owner !== playerId) return false;
+    return kind ? routeKind(r) === kind : true;
+  });
+}
+
+function routeKind(r) { return r.kind || 'road'; }
+
+function vertexOnMainland(vk) {
+  return state.board.vertices[vk].hexes.some((id) => {
+    const h = state.board.hexes[id];
+    return !isSea(h) && h.island === 0;
   });
 }
 
 function validCottageSpots(playerId, setupPhase) {
   return Object.keys(state.board.vertices).filter((vk) => {
     if (!vertexIsFree(vk)) return false;
-    return setupPhase ? true : playerTouchesVertex(playerId, vk);
+    if (!vertexTouchesLand(vk)) return false;   // nobody builds on open water
+    // The opening settlements are made on the mainland; the islands must be
+    // reached by broomstick, which is the whole point of the voyage.
+    if (setupPhase) return vertexOnMainland(vk);
+    return playerTouchesVertex(playerId, vk);
   });
 }
 
@@ -235,16 +279,19 @@ function validWardSpots(playerId) {
   });
 }
 
-function validRoadSpots(playerId, restrictToVertex) {
+function validRoadSpots(playerId, restrictToVertex, kind) {
+  const want = kind || 'road';
   return Object.keys(state.board.edges).filter((ek) => {
     if (state.roads[ek]) return false;
+    if (!edgeAllows(ek, want)) return false;
     const e = state.board.edges[ek];
     if (restrictToVertex) return e.a === restrictToVertex || e.b === restrictToVertex;
     return [e.a, e.b].some((v) => {
       const b = state.buildings[v];
       if (b && b.owner === playerId) return true;
       if (b && b.owner !== playerId) return false; // blocked by opponent building
-      return playerTouchesVertex(playerId, v);
+      // routes of different kinds may only be joined at your own building
+      return playerTouchesVertex(playerId, v, want);
     });
   });
 }
@@ -258,6 +305,7 @@ function placeCottage(playerId, vk, free) {
   const port = state.board.vertices[vk].port;
   if (port && !p.ports.includes(port)) p.ports.push(port);
   logMsg(p.name + ' raises a Cottage.' + (port ? ' They now trade at a ' + portLabel(port) + '.' : ''));
+  claimIsland(playerId, vk);
   recomputeLongestRoad();
 }
 
@@ -287,12 +335,24 @@ function placeWard(playerId, vk) {
   logMsg(p.name + ' binds a Shield Charm — they may now hold ' + handLimit(playerId) + ' cards through a seven.');
 }
 
-function placeRoad(playerId, ek, free) {
+function placeRoad(playerId, ek, free, kind) {
   const p = state.players[playerId];
-  if (!free) pay(p, COSTS.road);
-  state.roads[ek] = { owner: playerId };
-  p.pieces.road--;
+  const want = kind || 'road';
+  if (!free) pay(p, COSTS[want]);
+  state.roads[ek] = { owner: playerId, kind: want };
+  p.pieces[want]--;
   recomputeLongestRoad();
+}
+
+// The first house to settle an outer island is rewarded for the crossing.
+function claimIsland(playerId, vk) {
+  const p = state.players[playerId];
+  state.board.vertices[vk].hexes.forEach((hid) => {
+    const island = state.board.hexes[hid].island;
+    if (!island || p.islands.includes(island)) return;
+    p.islands.push(island);
+    logMsg(p.name + ' founds a settlement across the water — +' + ISLAND_BONUS_VP + ' point.', 'award');
+  });
 }
 
 /* ---------- dice & production ---------- */
@@ -318,12 +378,15 @@ function produce(sum) {
   const owed = {};
   state.players.forEach((p) => { owed[p.id] = emptyRes(); });
 
+  const gold = {};
   state.board.hexes.forEach((hex) => {
     if (hex.number !== sum || hex.id === state.dementor || !hex.res) return;
     hex.corners.forEach((vk) => {
       const b = state.buildings[vk];
       if (!b) return;
-      owed[b.owner][hex.res] += BUILDING_YIELD[b.type] || 1;
+      const n = BUILDING_YIELD[b.type] || 1;
+      if (hex.res === 'gold') gold[b.owner] = (gold[b.owner] || 0) + n;
+      else owed[b.owner][hex.res] += n;
     });
   });
 
@@ -343,8 +406,22 @@ function produce(sum) {
     });
   });
 
+  Object.keys(gold).forEach((id) => {
+    const p = state.players[Number(id)];
+    lines.push(p.name + ' +' + gold[id] + ' from the Lode');
+    state.goldQueue.push({ player: Number(id), count: gold[id] });
+  });
+
   if (lines.length) logMsg('Harvest: ' + lines.join(' · '));
   else logMsg('Nothing is harvested.');
+}
+
+function takeGold(playerId, counts) {
+  const p = state.players[playerId];
+  let n = 0;
+  RES_KEYS.forEach((k) => { n += grant(p, k, counts[k] || 0); });
+  state.goldQueue = state.goldQueue.filter((g) => g.player !== playerId);
+  logMsg(p.name + ' draws ' + n + ' from the Goblin Lode.');
 }
 
 function handleSeven() {
@@ -545,8 +622,9 @@ function longestRoadFor(playerId) {
   const adj = {};
   own.forEach((ek) => {
     const e = state.board.edges[ek];
-    (adj[e.a] = adj[e.a] || []).push({ ek, to: e.b });
-    (adj[e.b] = adj[e.b] || []).push({ ek, to: e.a });
+    const kind = routeKind(state.roads[ek]);
+    (adj[e.a] = adj[e.a] || []).push({ ek, to: e.b, kind });
+    (adj[e.b] = adj[e.b] || []).push({ ek, to: e.a, kind });
   });
 
   const blocked = (v) => {
@@ -554,18 +632,22 @@ function longestRoadFor(playerId) {
     return !!b && b.owner !== playerId;
   };
 
+  const mine = (v) => { const b = state.buildings[v]; return b && b.owner === playerId; };
+
   let best = 0;
-  const walk = (v, used) => {
+  const walk = (v, used, lastKind) => {
     if (used.size > best) best = used.size;
     if (blocked(v)) return;
-    for (const { ek, to } of adj[v] || []) {
+    for (const { ek, to, kind } of adj[v] || []) {
       if (used.has(ek)) continue;
+      // a route may only change between road and broomstick at your own building
+      if (lastKind && kind !== lastKind && !mine(v)) continue;
       used.add(ek);
-      walk(to, used);
+      walk(to, used, kind);
       used.delete(ek);
     }
   };
-  Object.keys(adj).forEach((v) => walk(v, new Set()));
+  Object.keys(adj).forEach((v) => walk(v, new Set(), null));
   return best;
 }
 
@@ -590,6 +672,7 @@ function victoryPoints(playerId, includeHidden) {
     if (b.owner !== playerId) return;
     vp += BUILDING_VP[b.type] || 1;
   });
+  vp += p.islands.length * ISLAND_BONUS_VP;
   if (state.longestRoad.owner === playerId) vp += 2;
   if (state.largestArmy.owner === playerId) vp += 2;
   if (includeHidden) vp += p.merlinTitles.length;
@@ -598,7 +681,7 @@ function victoryPoints(playerId, includeHidden) {
 
 function checkVictory() {
   const p = currentPlayer();
-  if (victoryPoints(p.id, true) >= VP_TO_WIN) {
+  if (victoryPoints(p.id, true) >= (state.vpTarget || VP_TO_WIN)) {
     state.winner = p.id;
     state.phase = 'over';
     logMsg(p.name + ' wins the House Cup with ' + victoryPoints(p.id, true) + ' points!', 'award');

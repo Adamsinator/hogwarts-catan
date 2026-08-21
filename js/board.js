@@ -16,6 +16,8 @@ const RESOURCES = {
 const RES_KEYS = Object.keys(RESOURCES);
 
 const TERRAINS = {
+  lake:       { res: null,        name: 'The Black Lake',   fill: '#16305a', sea: true },
+  lode:       { res: 'gold',      name: 'The Goblin Lode',  fill: '#8a6a1f' },
   forest:     { res: 'wandwood',  name: 'Forbidden Forest', fill: '#1e4230', glyph: '\u{1F332}' },
   quarry:     { res: 'runestone', name: 'Hogsmeade Quarry', fill: '#6b3a26', glyph: '⛏️' },
   owlery:     { res: 'owls',      name: 'The Owlery',       fill: '#3d628f', glyph: '\u{1F989}' },
@@ -35,6 +37,17 @@ const TERRAIN_BAG = [
 
 // Classic token spiral (18 tokens for 18 producing hexes).
 const NUMBER_SPIRAL = [5, 2, 6, 3, 8, 10, 9, 12, 11, 4, 8, 10, 9, 4, 5, 6, 3, 11];
+
+// Broomstick Voyage: the classic 19-hex mainland, then a full ring of open
+// water, then islands beyond it. The water ring matters — an island touching
+// the mainland is reachable by road and is no island at all.
+const ISLAND_SLOTS = [[2, 3], [10, 11], [18, 19]];   // indices into ring(4)
+const RIM_SEA = [1, 4, 9, 12, 17, 20];               // ring(4) water flanking each island
+const ISLAND_BAG = ['lode', 'lode', 'forest', 'owlery', 'greenhouse', 'quarry'];
+const ISLAND_NUMBERS = [3, 4, 5, 9, 10, 11];
+
+function isSea(hex) { return !!TERRAINS[hex.terrain].sea; }
+function isLand(hex) { return !TERRAINS[hex.terrain].sea; }
 
 const AXIAL_DIRS = [[1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]];
 
@@ -106,18 +119,82 @@ function numberPips(n) {
 }
 
 /* ---------- board construction ---------- */
-function buildBoard(seed) {
+function buildBoard(seed, scenario) {
   const rng = mulberry32(seed);
-  const coords = spiralCoords();
+  const hexes = scenario === 'voyage' ? voyageHexes(rng) : classicHexes(rng);
+  const board = assembleGeometry(hexes);
+  board.seed = seed;
+  board.scenario = scenario === 'voyage' ? 'voyage' : 'classic';
+  board.ports = scenario === 'voyage'
+    ? placeCoastPorts(board, rng)
+    : placePorts(board.edges, board.vertices, rng);
+  board.ports.forEach((p) => {
+    p.vertices.forEach((vk) => { board.vertices[vk].port = p.type; });
+  });
+  return board;
+}
 
+function classicHexes(rng) {
+  const coords = spiralCoords();
+  let hexes;
   // Shuffle terrain until no two "red" (6/8) or identical numbers touch.
-  let terrains, hexes;
   for (let attempt = 0; attempt < 500; attempt++) {
-    terrains = shuffle(TERRAIN_BAG, rng);
-    hexes = assembleHexes(coords, terrains);
+    hexes = assembleHexes(coords, shuffle(TERRAIN_BAG, rng));
     if (layoutIsFair(hexes)) break;
   }
+  return hexes;
+}
 
+function seaHex(c) {
+  const { x, y } = hexCenter(c.q, c.r);
+  return {
+    id: 0, q: c.q, r: c.r, terrain: 'lake', res: null, number: null,
+    pips: 0, cx: x, cy: y, island: 0,
+  };
+}
+
+function voyageHexes(rng) {
+  let mainland;
+  for (let attempt = 0; attempt < 500; attempt++) {
+    mainland = assembleHexes(spiralCoords(), shuffle(TERRAIN_BAG, rng));
+    if (layoutIsFair(mainland)) break;
+  }
+  mainland.forEach((h) => { h.island = 0; });
+
+  // ring 3 is open water all the way round, so nothing can be walked to
+  const channel = ring(3).map(seaHex);
+
+  const islandTerrain = shuffle(ISLAND_BAG, rng);
+  const islandNumbers = shuffle(ISLAND_NUMBERS, rng);
+  const slotOf = {};
+  ISLAND_SLOTS.forEach((pair, islandIdx) => {
+    pair.forEach((i) => { slotOf[i] = islandIdx + 1; });
+  });
+
+  const outer = ring(4);
+  const keep = new Set([...RIM_SEA, ...ISLAND_SLOTS.flat()]);
+  let t = 0;
+  const rim = [];
+  outer.forEach((c, i) => {
+    if (!keep.has(i)) return;
+    const island = slotOf[i] || 0;
+    if (!island) { rim.push(seaHex(c)); return; }
+    const terrain = islandTerrain[t];
+    const number = islandNumbers[t];
+    t++;
+    const { x, y } = hexCenter(c.q, c.r);
+    rim.push({
+      id: 0, q: c.q, r: c.r, terrain, res: TERRAINS[terrain].res, number,
+      pips: numberPips(number), cx: x, cy: y, island,
+    });
+  });
+
+  const all = mainland.concat(channel, rim);
+  all.forEach((h, i) => { h.id = i; });
+  return all;
+}
+
+function assembleGeometry(hexes) {
   const vertices = {};
   const edges = {};
 
@@ -149,9 +226,7 @@ function buildBoard(seed) {
     if (!vertices[e.b].adj.includes(e.a)) vertices[e.b].adj.push(e.a);
   });
 
-  const ports = placePorts(edges, vertices, rng);
-
-  return { seed, hexes, vertices, edges, ports };
+  return { hexes, vertices, edges, ports: [] };
 }
 
 function assembleHexes(coords, terrains) {
@@ -163,7 +238,7 @@ function assembleHexes(coords, terrains) {
     const { x, y } = hexCenter(c.q, c.r);
     return {
       id: i, q: c.q, r: c.r, terrain, res: t.res, number,
-      pips: numberPips(number), cx: x, cy: y,
+      pips: numberPips(number), cx: x, cy: y, island: 0,
     };
   });
 }
@@ -171,7 +246,7 @@ function assembleHexes(coords, terrains) {
 function layoutIsFair(hexes) {
   const byCoord = new Map(hexes.map((h) => [h.q + ',' + h.r, h]));
   for (const h of hexes) {
-    if (h.number === null) continue;
+    if (h.number === null || isSea(h)) continue;
     for (const [dq, dr] of AXIAL_DIRS) {
       const n = byCoord.get((h.q + dq) + ',' + (h.r + dr));
       if (!n || n.number === null) continue;
@@ -184,6 +259,39 @@ function layoutIsFair(hexes) {
 
 const PORT_TYPES = ['any', 'any', 'any', 'any', 'wandwood', 'runestone', 'owls', 'mandrake', 'galleons'];
 const PORT_GAPS = [0, 3, 6, 10, 13, 16, 20, 23, 27];
+
+// On the voyage map the mainland has a genuine shoreline: edges with land on
+// one side and open water on the other. Markers sit out in the water.
+function placeCoastPorts(board, rng) {
+  const shore = Object.values(board.edges).filter((e) => {
+    const adj = e.hexes.map((id) => board.hexes[id]);
+    if (adj.length !== 2) return false;
+    const land = adj.filter(isLand);
+    return land.length === 1 && land[0].island === 0;
+  });
+  shore.forEach((e) => {
+    e.mx = (e.x1 + e.x2) / 2;
+    e.my = (e.y1 + e.y2) / 2;
+    e.angle = Math.atan2(e.my, e.mx);
+  });
+  shore.sort((a, b) => a.angle - b.angle);
+
+  const types = shuffle(PORT_TYPES, rng);
+  const step = shore.length / types.length;
+  return types.map((type, i) => {
+    const e = shore[Math.floor(i * step) % shore.length];
+    const sea = e.hexes.map((id) => board.hexes[id]).find(isSea);
+    // nudge the marker off the shoreline into the water it serves
+    const tx = sea ? (sea.cx - e.mx) : e.mx;
+    const ty = sea ? (sea.cy - e.my) : e.my;
+    const len = Math.hypot(tx, ty) || 1;
+    return {
+      id: i, type, edgeKey: e.key, vertices: [e.a, e.b],
+      x: e.mx, y: e.my,
+      ox: snap(e.mx + tx / len * 30), oy: snap(e.my + ty / len * 30),
+    };
+  });
+}
 
 function placePorts(edges, vertices, rng) {
   const coastal = Object.values(edges).filter((e) => e.hexes.length === 1);
@@ -208,8 +316,6 @@ function placePorts(edges, vertices, rng) {
       oy: snap(e.my + (e.my / Math.hypot(e.mx, e.my)) * 44),
     };
     ports.push(port);
-    vertices[e.a].port = type;
-    vertices[e.b].port = type;
   });
   return ports;
 }

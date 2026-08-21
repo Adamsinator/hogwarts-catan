@@ -5,8 +5,17 @@ no dependencies, no backend. Open `index.html` or serve the folder.
 
 ## Playing
 
-Two to four houses compete — any mix of humans (hot-seat) and AI at three skill levels. First to
-**12 victory points** wins the House Cup. A **Pace** control sets how long AI opponents pause
+Two to four houses compete — any mix of humans (hot-seat) and AI at three skill levels.
+
+### Maps
+
+- **Hogsmeade Valley** — the classic 19-hex board. First to **12 victory points**.
+- **Broomstick Voyage** — the valley set in the Black Lake, ringed by open water with three
+  islands beyond it. First to **14**. Broomstick Routes fly where Floo Routes cannot; a flight
+  launches only from your own coastal holding, and the two kinds of route join only at one of your
+  buildings. Opening Cottages go on the mainland, so the islands must be flown to. The first house
+  to settle each island scores a bonus point, and two **Goblin Lodes** pay out in whatever
+  resource the owner chooses. A **Pace** control sets how long AI opponents pause
 between actions.
 
 ### AI difficulty
@@ -30,6 +39,8 @@ games against 12% for Easy, and Easy never builds a Citadel or a Shield Charm at
 | Road / Settlement / City | Floo Route / Cottage / Castle |
 | *(no equivalent)* | Citadel — a third tier, 3 points and 3 cards a harvest |
 | City Wall | Shield Charm — a ward that raises your hand limit |
+| Seafarers ships | Broomstick Routes — flight over the Black Lake |
+| Gold field | The Goblin Lode — pays out in any resource you choose |
 | Development cards | Spell Scrolls — Auror, Floo Powder, Accio, Imperio, Order of Merlin |
 | Longest Road | Longest Floo Network |
 | Largest Army | Dumbledore's Army |
