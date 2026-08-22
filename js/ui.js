@@ -1020,9 +1020,12 @@ function showSetup() {
     const def = i === 0 ? 'human' : (i < 3 ? 'ai:medium' : 'off');
     const opt = (v, label) => '<option value="' + v + '"' + (def === v ? ' selected' : '') + '>' + label + '</option>';
     return '<div class="setup-row" data-house="' + h.key + '">' +
-      '<span class="crest">' + h.crest + '</span>' +
-      '<span class="hname">' + h.name +
-        (careerLine(h.key) ? ' <span class="career">' + careerLine(h.key) + '</span>' : '') + '</span>' +
+      '<span class="who">' +
+        '<span class="crest">' + h.crest + '</span>' +
+        '<span class="hname">' + h.name +
+          (careerLine(h.key) ? ' <span class="career">' + careerLine(h.key) + '</span>' : '') + '</span>' +
+      '</span>' +
+      '<span class="controls">' +
       '<input type="text" value="' + h.name + '" maxlength="14" aria-label="Name">' +
       '<select aria-label="Player type">' +
       opt('human', 'Human') +
@@ -1030,7 +1033,7 @@ function showSetup() {
       opt('ai:medium', 'AI — Medium') +
       opt('ai:hard', 'AI — Hard') +
       opt('off', 'Not playing') +
-      '</select></div>';
+      '</select></span></div>';
   }).join('');
 
   const m = modal(
@@ -1077,7 +1080,7 @@ function showSetup() {
 }
 
 function showRules() {
-  modal(
+  const rules = modal(
     '<h2>📖 The Rules of Hogsmeade</h2>' +
     '<div class="rules-body">' +
     '<p>Wizarding families are settling the valley around Hogsmeade. Claim the best land, keep the Floo network open, and reach <strong>' + VP_TO_WIN + ' victory points</strong> first.</p>' +
@@ -1148,7 +1151,9 @@ function showRules() {
     '</ul>' +
     '</div>' +
     '<div class="actions"><button class="primary" data-x>Close</button></div>'
-  ).root.querySelector('[data-x]').addEventListener('click', closeAllModals);
+  );
+  // Close only this panel — the setup dialog may well be open underneath it.
+  rules.root.querySelector('[data-x]').addEventListener('click', rules.close);
 }
 
 /* ================= persistence ================= */

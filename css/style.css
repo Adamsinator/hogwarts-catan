@@ -377,13 +377,15 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 @media (max-width:520px){ .scenario-pick{flex-direction:column;} }
 .setup-row{
   display:flex;align-items:center;gap:9px;background:rgba(255,255,255,.04);
-  border:1px solid var(--line);border-radius:9px;padding:8px 10px;
+  border:1px solid var(--line);border-radius:9px;padding:8px 10px;flex-wrap:wrap;
 }
+.setup-row .who{display:flex;align-items:center;gap:9px;flex:1 1 auto;min-width:0;}
+.setup-row .controls{display:flex;align-items:center;gap:8px;flex:0 0 auto;}
 .setup-row .crest{font-size:22px;}
 .setup-row .hname{font-family:var(--serif);font-size:15px;flex:1;}
 .setup-row select,.setup-row input{
   background:rgba(0,0,0,.35);color:var(--text);border:1px solid var(--line);
-  border-radius:7px;padding:6px 8px;font-family:var(--body);font-size:13px;
+  border-radius:7px;padding:6px 8px;font-family:var(--body);font-size:13px;min-width:0;
 }
 .setup-row input{width:120px;}
 /* the hands laid open by the Marauder's Map */
@@ -413,4 +415,9 @@ button:disabled{opacity:.4;cursor:not-allowed;}
   .topbar{flex-wrap:wrap;}
   .build-grid{grid-template-columns:1fr;}
   .modal{padding:16px;}
+  /* House, then its two controls beneath — a phone has no room for one line. */
+  .setup-row{align-items:stretch;}
+  .setup-row .who,.setup-row .controls{flex:1 1 100%;}
+  .setup-row .controls input,.setup-row .controls select{flex:1 1 0;width:auto;}
+  .map-hand{justify-content:flex-start;}
 }
