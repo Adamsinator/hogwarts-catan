@@ -386,6 +386,10 @@ button:disabled{opacity:.4;cursor:not-allowed;}
   border-radius:7px;padding:6px 8px;font-family:var(--body);font-size:13px;
 }
 .setup-row input{width:120px;}
+/* the hands laid open by the Marauder's Map */
+.map-hand{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
+.map-hand .pick{padding:6px 9px;font-size:13px;gap:5px;}
+.map-hand .pick strong{color:var(--gold-soft);}
 .rules-body{font-size:14px;line-height:1.65;color:#d6d9ec;}
 .rules-body h3{margin-top:16px;}
 .rules-body ul{margin:6px 0;padding-left:20px;}

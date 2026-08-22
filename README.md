@@ -22,11 +22,11 @@ between actions.
 
 | Level | Behaviour | Win rate* |
 |---|---|---|
-| Easy | Chases raw pips, rarely visits the bank, aims the Dementor almost at random, accepts poor trades, never opens a negotiation, and never builds Citadels or wards | 15% |
-| Medium | Sound play: sensible build order, bank-trades toward its next piece, targets the leader, offers deals when a card short, builds Citadels and wards | 36% |
-| Hard | Weighs scarcity and ports, hunts the Longest Floo Network, drives for the last points once it nears the target, refuses trades that help the leader | 49% |
+| Easy | Chases raw pips, rarely visits the bank, aims the Dementor almost at random, accepts poor trades, never opens a negotiation, and never builds Citadels, wards or Willows | 11% |
+| Medium | Sound play: sensible build order, bank-trades toward its next piece, targets the leader, offers deals when a card short, builds Citadels and wards, and plants its Willow the moment the Dementor lands on its land | 39% |
+| Hard | Weighs scarcity and ports, hunts the Longest Floo Network, shields its best region with a Willow before the Dementor gets there, drives for the last points once it nears the target, refuses trades that help the leader | 50% |
 
-\* Measured over 150 three-handed games with one AI of each level and rotated seating.
+\* Measured over 300 three-handed games with one AI of each level and rotated seating.
 The levels differ in strategy, not just strength — Hard takes the Longest Floo Network in 62% of
 games against 12% for Easy, and Easy never builds a Citadel or a Shield Charm at all.
 
@@ -39,9 +39,10 @@ games against 12% for Easy, and Easy never builds a Citadel or a Shield Charm at
 | Road / Settlement / City | Floo Route / Cottage / Castle |
 | *(no equivalent)* | Citadel — a third tier, 3 points and 3 cards a harvest |
 | City Wall | Shield Charm — a ward that raises your hand limit |
+| *(no equivalent)* | Whomping Willow — a region the Dementor cannot enter |
 | Seafarers ships | Broomstick Routes — flight over the Black Lake |
 | Gold field | The Goblin Lode — pays out in any resource you choose |
-| Development cards | Spell Scrolls — Auror, Floo Powder, Accio, Imperio, Order of Merlin |
+| Development cards | Spell Scrolls — Auror, Floo Powder, Accio, Imperio, the Marauder's Map, the Time-Turner, Order of Merlin |
 | Longest Road | Longest Floo Network |
 | Largest Army | Dumbledore's Army |
 | Harbours | Trading Posts |
@@ -53,17 +54,26 @@ Full rules are in the in-game **Rules** panel.
 Standard Catan, including the fiddly bits:
 
 - 19-hex board, random terrain with the classic number spiral; layouts reshuffle until no two
-  6/8 or matching tokens are adjacent.
+  6/8 or matching tokens are adjacent. The layout is drawn once when a game begins and stands for
+  the whole game — regions never move between turns, only the Dementor does.
 - Snake-order setup; the second Cottage harvests its surrounding regions.
 - Three building tiers: Cottage (1 point, 1 card), Castle (2 and 2), Citadel (3 and 3).
 - Shield Charms raise your own hand limit by 2 each, up to three, taking it from 7 to 13. A ward
   survives its Castle becoming a Citadel.
+- One Whomping Willow per house, planted on a producing region one of your buildings touches. The
+  Dementor may never be banished into that region again, and planting on the region it is already
+  sitting on beats it straight back to Azkaban. No points, no cards — just a harvest nobody can
+  interrupt.
 - Distance rule, road connectivity, and opponent buildings breaking a Floo Network.
 - Roll of 7: discard half above 7 cards, banish the Dementor, steal a card.
 - Bank shortfall rule — if the supply can't pay every claimant, nobody collects that resource.
 - 4:1 / 3:1 / 2:1 trading, plus player-to-player offers in both directions: medium and hard
   opponents open negotiations rather than only answering them.
-- Spell Scrolls are unplayable on the turn they're drawn; one per turn.
+- Spell Scrolls are unplayable on the turn they're drawn; one per turn. A scroll that could do
+  nothing — Floo Powder with nowhere to build, a Time-Turner before the dice are thrown, a
+  Marauder's Map over empty hands — is greyed out rather than swallowed.
+- The Marauder's Map lays every rival hand open and takes the one card you name; the Time-Turner
+  buys a second roll of the dice, and a seven on it stirs the Dementor like any other.
 - Longest Floo Network (5+) and Dumbledore's Army (3+) are held until strictly beaten.
 
 Games autosave to `localStorage` and offer to resume on reload.
@@ -81,14 +91,15 @@ Games autosave to `localStorage` and offer to resume on reload.
 - **Career record.** Wins and games per house persist across sessions, shown on the setup screen
   and in the Stats panel, with the quickest win and best score.
 - **Shortcuts.** `R` roll, `E` end turn, `T` bank trade, `O` offer a trade, `S` stats,
-  `1`–`6` build, `Esc` cancel or close.
+  `1`–`8` build, `Esc` cancel or close.
 
 ## Testing
 
 The rules engine is driven entirely through globals (`state`, `createGame`, `rollDice`, `AI.*`),
 so a full AI-vs-AI game can be played from the browser console without touching the DOM. That is
 how the ruleset is regression-tested: batches of games are checked for resource conservation,
-non-negative hands, the distance rule, piece limits, and a legitimate 10-point win.
+non-negative hands, the distance rule, piece limits, a Dementor that never stands where a Whomping
+Willow grows, and a legitimate win on the target score.
 
 ## Files
 

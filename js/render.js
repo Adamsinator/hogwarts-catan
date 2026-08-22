@@ -359,6 +359,7 @@ function drawHexes(g, handlers) {
     const title = el('title', null, grp);
     title.textContent = t.name + (hex.number ? ' — rolls ' + hex.number : ' — yields nothing');
 
+    if (state.willows && state.willows[hex.id] !== undefined) drawWillow(grp, hex);
     if (state.dementor === hex.id) drawDementor(grp, hex);
 
     if (handlers.hexClickable && handlers.hexClickable(hex.id)) {
@@ -370,6 +371,29 @@ function drawHexes(g, handlers) {
       grp.addEventListener('click', () => handlers.onHex(hex.id));
     }
   });
+}
+
+// A Whomping Willow stands to the right of the number token, ringed in its
+// owner's colour, and keeps the Dementor out of the region for good. Clipped
+// to the tile like the terrain artwork, so it never spills over an edge.
+function drawWillow(g, hex) {
+  const owner = state.players[state.willows[hex.id]];
+  const grp = el('g', {
+    class: 'willow',
+    transform: 'translate(' + hex.cx + ',' + hex.cy + ')',
+    'clip-path': 'url(#hexClip)',
+  }, g);
+  el('ellipse', { cx: 33, cy: 33, rx: 16, ry: 4.5, fill: '#000', opacity: 0.45 }, grp);
+  el('path', { d: 'M 30 33 L 31.5 14 L 34.5 14 L 36 33 Z', fill: '#5a4020', stroke: '#0d1409', 'stroke-width': 1.4 }, grp);
+  // a dark halo so the tree reads over forest as clearly as over stone
+  el('circle', { cx: 33, cy: 8, r: 17, fill: '#050c07', opacity: 0.55 }, grp);
+  el('circle', { cx: 33, cy: 8, r: 13, fill: '#2f8551', stroke: owner.color, 'stroke-width': 3 }, grp);
+  el('path', {
+    d: 'M 23 5 q -5 12 -2 21 M 29 1 q -3 14 -1 22 M 37 1 q 3 14 1 22 M 43 5 q 5 12 2 21',
+    stroke: '#8fd6a5', 'stroke-width': 2, fill: 'none', 'stroke-linecap': 'round', opacity: 0.85,
+  }, grp);
+  el('title', null, grp).textContent =
+    owner.name + '\u2019s Whomping Willow — the Dementor cannot settle in this region';
 }
 
 function drawDementor(g, hex) {

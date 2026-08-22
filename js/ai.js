@@ -14,19 +14,19 @@
 const AI_LEVELS = {
   easy: {
     label: 'Easy', noise: 26, planTrades: true, tradeAfter: 8, skipChance: 0.15, proposes: false,
-    buildsCitadels: false, wards: false,
+    buildsCitadels: false, wards: false, plantsWillow: false,
     dementorSkill: 0.15, spellSkill: 0.35, scarcity: 0, portValue: 0,
     endgame: false, chaseRoad: false, tradeGenerosity: 1.6,
   },
   medium: {
     label: 'Medium', noise: 7, planTrades: true, tradeAfter: 0, skipChance: 0.08, proposes: true,
-    buildsCitadels: true, wards: true,
+    buildsCitadels: true, wards: true, plantsWillow: true,
     dementorSkill: 0.8, spellSkill: 0.85, scarcity: 8, portValue: 4,
     endgame: false, chaseRoad: false, tradeGenerosity: 1.0,
   },
   hard: {
     label: 'Hard', noise: 1.5, planTrades: true, tradeAfter: 0, skipChance: 0, proposes: true,
-    buildsCitadels: true, wards: true,
+    buildsCitadels: true, wards: true, plantsWillow: true,
     dementorSkill: 1, spellSkill: 1, scarcity: 14, portValue: 7,
     endgame: true, chaseRoad: true, tradeGenerosity: 0.55,
   },
@@ -156,6 +156,26 @@ const AI = (function () {
   function bestWardSpot(playerId) {
     const c = cfg(playerId);
     return pickBest(validWardSpots(playerId), (vk) => vertexValue(vk, playerId), c.noise);
+  }
+
+  // The region worth a Willow: the one this house draws most from — and above
+  // all the one the Dementor is sitting on, since planting there beats it off.
+  function bestWillowHex(playerId) {
+    const c = cfg(playerId);
+    const options = validWillowHexes(playerId);
+    if (!options.length) return null;
+    return pickBest(options, (id) => {
+      const hex = state.board.hexes[id];
+      let mine = 0;
+      hex.corners.forEach((vk) => {
+        const b = state.buildings[vk];
+        if (b && b.owner === playerId) mine += BUILDING_YIELD[b.type] || 1;
+      });
+      let score = hex.pips * mine * 4;
+      if (hex.res === 'gold') score += 10;
+      if (state.dementor === id) score += 60;
+      return score;
+    }, c.noise);
   }
 
   // Would laying this road take (or extend) the Longest Floo Network?
@@ -358,7 +378,8 @@ const AI = (function () {
   /* ---------- the Dementor ---------- */
   function bestDementorHex(playerId) {
     const c = cfg(playerId);
-    const options = state.board.hexes.filter((h) => h.id !== state.dementor);
+    const options = state.board.hexes.filter((h) => canDementorEnter(h.id));
+    if (!options.length) return state.dementor;
 
     // Unskilled players just shove it somewhere that is not their own land.
     if (Math.random() > c.dementorSkill) {
@@ -408,6 +429,23 @@ const AI = (function () {
       const bar = c.endgame ? 3 : 4;
       if (best.n >= bar) return { card: 'imperio', opts: { res: best.k } };
     }
+    // The Map: take exactly the card that is holding us up, or bleed whoever
+    // is both rich and close to the Cup.
+    if (p.spells.includes('map') && spellIsCastable('map', p.id)) {
+      const { need } = missingFor(p, COSTS[currentGoal(p)]);
+      let best = null;
+      state.players.forEach((o) => {
+        if (o.id === p.id) return;
+        RES_KEYS.forEach((k) => {
+          if (o.res[k] <= 0) return;
+          const score = (need[k] ? 10 : 1) + o.res[k] * 0.5 + victoryPoints(o.id, false) * 0.4;
+          if (!best || score > best.score) best = { score, target: o.id, res: k };
+        });
+      });
+      if (best && (c.endgame || best.score >= 6)) {
+        return { card: 'map', opts: { target: best.target, res: best.res } };
+      }
+    }
     if (p.spells.includes('accio')) {
       const { need } = missingFor(p, COSTS[currentGoal(p)]);
       const keys = Object.keys(need);
@@ -424,6 +462,14 @@ const AI = (function () {
         const flying = state.scenario === 'voyage' && kinds.includes('broom') && !!bestFlightSpot(p.id);
         return { card: 'floo', opts: { kind: flying ? 'broom' : kinds[0] } };
       }
+    }
+    // A second harvest is worth having, but not while a seven would cost us
+    // half the hand.
+    if (p.spells.includes('turner') && spellIsCastable('turner', p.id)) {
+      const room = handLimit(p.id) - totalCards(p);
+      const holdings = Object.keys(state.buildings)
+        .filter((vk) => state.buildings[vk].owner === p.id).length;
+      if (room >= 2 && holdings >= 2) return { card: 'turner', opts: {} };
     }
     if (p.spells.includes('auror')) {
       const dem = state.board.hexes[state.dementor];
@@ -464,6 +510,20 @@ const AI = (function () {
       const spot = bestWardSpot(p.id);
       const exposed = totalCards(p) >= handLimit(p.id) - 1;
       if (spot && exposed && affordVia(p, COSTS.ward, false)) return { type: 'ward', target: spot };
+    }
+
+    // A Whomping Willow. Reactive for most: planted the moment the Dementor
+    // settles on land this house is drawing from, which beats it straight off
+    // again. A hard player also shields its best region before that happens.
+    if (c.plantsWillow && p.pieces.willow > 0) {
+      const spot = bestWillowHex(p.id);
+      if (spot !== null) {
+        const besieged = state.dementor === spot;
+        const prime = c.endgame && state.board.hexes[spot].pips >= 5;
+        if ((besieged || prime) && affordVia(p, COSTS.willow, false)) {
+          return { type: 'willow', target: spot };
+        }
+      }
     }
 
     // Castles: two points and double production.
@@ -581,7 +641,8 @@ const AI = (function () {
 
   return {
     bestSetupVertex, bestSetupRoad, bestDementorHex, richestTarget,
-    bestCottageSpot, bestCastleSpot, bestCitadelSpot, bestWardSpot, bestRoadSpot, roadClaimsLongest,
+    bestCottageSpot, bestCastleSpot, bestCitadelSpot, bestWardSpot, bestWillowHex,
+    bestRoadSpot, roadClaimsLongest,
     considerSpell, nextBuild, evaluateTradeOffer, proposeTrade, currentGoal, vertexValue,
     bestRouteMove, chooseGold, bestFlightSpot, islandSpotReady,
     planBankTrades, cfg,

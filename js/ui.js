@@ -3,7 +3,7 @@
    UI: panels, modals, input handling and the turn scheduler.
 ------------------------------------------------------------------ */
 
-const SAVE_KEY = 'hogsmeade.save.v2';
+const SAVE_KEY = 'hogsmeade.save.v3';
 
 // How long AI opponents pause between actions, so their turns can be followed.
 const PACE_PRESETS = {
@@ -101,8 +101,10 @@ function renderBanner() {
   else if (p.isAI) msg = p.name + ' is thinking…';
   else if (state.phase === 'setup') msg = state.setupRoadFrom ? 'Choose a Floo Route from your new Cottage' : 'Choose a spot for your Cottage';
   else if (state.phase === 'moveDementor') msg = 'Click a region to banish the Dementor there';
+  else if (state.pending && state.pending.kind === 'willow') msg = 'Choose a region for your Whomping Willow';
   else if (state.pending) msg = 'Choose where to place your ' + PIECE_NAMES[state.pending.kind] +
     (state.pending.free && state.pending.remaining > 1 ? ' (' + state.pending.remaining + ' left)' : '');
+  else if (state.phase === 'roll' && state.extraRoll) msg = 'The hour repeats — roll once more';
   b.hidden = !msg;
   b.textContent = msg;
 }
@@ -119,7 +121,7 @@ function renderSidebar() {
 
   const hints = {
     setup: state.setupRoadFrom ? 'Place a Floo Route' : 'Place a Cottage',
-    roll: 'Roll to harvest',
+    roll: state.extraRoll ? 'The Time-Turner spins — roll again' : 'Roll to harvest',
     main: 'Build, trade, or end your turn',
     moveDementor: 'Banish the Dementor',
     steal: 'Choose a victim',
@@ -166,6 +168,7 @@ function renderSidebar() {
     { kind: 'castle', label: 'Castle', cost: COSTS.castle, spots: () => validCastleSpots(p.id).length, left: p.pieces.castle },
     { kind: 'citadel', label: 'Citadel', cost: COSTS.citadel, spots: () => validCitadelSpots(p.id).length, left: p.pieces.citadel },
     { kind: 'ward', label: 'Shield Charm', cost: COSTS.ward, spots: () => validWardSpots(p.id).length, left: p.pieces.ward },
+    { kind: 'willow', label: 'Whomping Willow', cost: COSTS.willow, spots: () => validWillowHexes(p.id).length, left: p.pieces.willow },
   ]);
   const grid = $('build-actions');
   grid.innerHTML = '';
@@ -205,11 +208,12 @@ function renderSidebar() {
     sp.innerHTML = '<span class="empty">No scrolls yet. Buy one to learn a spell.</span>';
   }
   p.spells.forEach((card) => {
+    const ready = playable && spellIsCastable(card, p.id);
     const b = document.createElement('button');
-    b.className = 'spell-card' + (playable ? '' : ' locked');
+    b.className = 'spell-card' + (ready ? '' : ' locked');
     b.innerHTML = SPELLS[card].icon + ' ' + SPELLS[card].name;
-    b.title = SPELLS[card].desc;
-    b.disabled = !playable;
+    b.title = SPELLS[card].desc + (playable && !ready ? '\n\nNothing for it to do right now.' : '');
+    b.disabled = !ready;
     b.addEventListener('click', () => castSpell(card));
     sp.appendChild(b);
   });
@@ -282,9 +286,13 @@ function boardHandlers() {
     if (!state.setupRoadFrom) h.vertexTargets = validCottageSpots(p.id, true);
     else h.edgeTargets = validRoadSpots(p.id, state.setupRoadFrom);
   } else if (state.phase === 'moveDementor') {
-    h.hexClickable = (id) => id !== state.dementor;
+    h.hexClickable = (id) => canDementorEnter(id);
   } else if (state.pending) {
-    if (state.pending.kind === 'road' || state.pending.kind === 'broom') {
+    if (state.pending.kind === 'willow') {
+      const spots = validWillowHexes(p.id);
+      h.hexClickable = (id) => spots.includes(id);
+    }
+    else if (state.pending.kind === 'road' || state.pending.kind === 'broom') {
       h.edgeTargets = validRoadSpots(p.id, null, state.pending.kind);
     }
     else if (state.pending.kind === 'cottage') h.vertexTargets = validCottageSpots(p.id, false);
@@ -340,6 +348,11 @@ function onEdge(ek) {
 }
 
 function onHex(hexId) {
+  if (state.pending && state.pending.kind === 'willow') {
+    plantWillow(state.current, hexId);
+    state.pending = null;
+    return tick();
+  }
   if (state.phase !== 'moveDementor') return;
   moveDementor(hexId, state.current);
   tick();
@@ -348,6 +361,8 @@ function onHex(hexId) {
 /* ================= spells ================= */
 function castSpell(card) {
   const p = currentPlayer();
+  if (!spellIsCastable(card, p.id)) return;
+  if (card === 'map') return promptMap(p);
   if (card === 'accio') return promptAccio(p);
   if (card === 'imperio') return promptImperio(p);
   if (card === 'floo') return promptFloo(p);
@@ -378,6 +393,42 @@ function promptFloo(p) {
     b.textContent = PIECE_NAMES[k] + 's';
     b.addEventListener('click', () => { m.close(); playSpell(p.id, 'floo', { kind: k }); tick(); });
     row.appendChild(b);
+  });
+  m.root.querySelector('[data-x]').addEventListener('click', m.close);
+}
+
+function promptMap(p) {
+  const rivals = mapVictims(p.id);
+  const m = modal(
+    '<h2>' + SPELLS.map.icon + " The Marauder's Map</h2>" +
+    '<p class="sub">I solemnly swear that I am up to no good. Every rival hand lies open — ' +
+    'take the one card you want.</p>' +
+    '<div class="setup-players" id="map-rows"></div>' +
+    '<div class="actions"><button class="ghost" data-x>Cancel</button></div>'
+  );
+  const box = m.root.querySelector('#map-rows');
+  rivals.forEach((o) => {
+    const row = document.createElement('div');
+    row.className = 'setup-row';
+    row.innerHTML = '<span class="crest">' + o.crest + '</span>' +
+      '<span class="hname">' + o.name + '</span>';
+    const hand = document.createElement('span');
+    hand.className = 'map-hand';
+    RES_KEYS.forEach((k) => {
+      if (o.res[k] <= 0) return;
+      const b = document.createElement('button');
+      b.className = 'pick';
+      b.innerHTML = RESOURCES[k].icon + ' <strong>' + o.res[k] + '</strong>';
+      b.title = 'Take 1 ' + RESOURCES[k].label + ' from ' + o.name;
+      b.addEventListener('click', () => {
+        m.close();
+        playSpell(p.id, 'map', { target: o.id, res: k });
+        tick();
+      });
+      hand.appendChild(b);
+    });
+    row.appendChild(hand);
+    box.appendChild(row);
   });
   m.root.querySelector('[data-x]').addEventListener('click', m.close);
 }
@@ -810,6 +861,7 @@ function aiStep() {
     if (move) {
       if (move.type === 'citadel') placeCitadel(p.id, move.target);
       else if (move.type === 'ward') placeWard(p.id, move.target);
+      else if (move.type === 'willow') plantWillow(p.id, move.target);
       else if (move.type === 'castle') placeCastle(p.id, move.target);
       else if (move.type === 'cottage') placeCottage(p.id, move.target, false);
       else if (move.type === 'road' || move.type === 'broom') placeRoad(p.id, move.target, false, move.type);
@@ -1044,11 +1096,20 @@ function showRules() {
     '<li><strong>Castle</strong> — ' + costText(COSTS.castle) + ' (upgrades a Cottage: 2 points, 2 cards)</li>' +
     '<li><strong>Citadel</strong> — ' + costText(COSTS.citadel) + ' (upgrades a Castle: 3 points, 3 cards)</li>' +
     '<li><strong>Shield Charm</strong> — ' + costText(COSTS.ward) + ' (warded holding, see below)</li>' +
+    '<li><strong>Whomping Willow</strong> — ' + costText(COSTS.willow) + ' (a region the Dementor cannot enter)</li>' +
     '<li><strong>Spell Scroll</strong> — ' + costText(COSTS.spell) + '</li>' +
     '</ul>' +
     '<h3>The Dementor</h3><ul>' +
     '<li>Roll a <strong>7</strong> and anyone over their hand limit feeds half their cards to the Dementor. The limit is <strong>7</strong> unless you have warded your holdings.</li>' +
     '<li>The roller then banishes the Dementor to a new region and steals a card from someone there. That region yields nothing until the Dementor moves on.</li>' +
+    '<li>It will not enter a region guarded by a Whomping Willow.</li>' +
+    '</ul>' +
+    '<h3>The Whomping Willow</h3><ul>' +
+    '<li>Plant one for ' + costText(COSTS.willow) + ' on any producing region one of your buildings touches. ' +
+      'Each house has <strong>one</strong>, and it stands for the rest of the game.</li>' +
+    '<li>The Dementor can never be banished into that region again — by you or by anyone else.</li>' +
+    '<li>Plant it on the region the Dementor is <em>already</em> sitting on and the tree beats it straight back to Azkaban.</li>' +
+    '<li>It scores no points and yields no cards. What it buys is a harvest nobody can interrupt.</li>' +
     '</ul>' +
     '<h3>Broomstick Voyage</h3><ul>' +
     '<li>The second map sets the valley in the middle of the Black Lake, with three islands beyond the water.</li>' +
@@ -1079,7 +1140,7 @@ function showRules() {
     '</ul>' +
     '<h3>Shortcuts</h3><ul>' +
     '<li><code>R</code> roll · <code>E</code> end turn · <code>T</code> bank trade · <code>O</code> offer a trade · <code>S</code> stats</li>' +
-    '<li><code>1</code>–<code>6</code> pick a thing to build · <code>Esc</code> cancel or close</li>' +
+    '<li><code>1</code>–<code>8</code> pick a thing to build · <code>Esc</code> cancel or close</li>' +
     '</ul>' +
     '<h3>Titles</h3><ul>' +
     '<li><strong>Longest Floo Network</strong> — 5+ connected routes, +2 points. An opponent’s building breaks the chain.</li>' +
@@ -1172,7 +1233,7 @@ document.addEventListener('DOMContentLoaded', () => {
     else if (key === 't') press('btn-bank');
     else if (key === 'o') press('btn-offer');
     else if (key === 's') press('btn-stats');
-    else if ('1234567'.includes(key)) {
+    else if ('12345678'.includes(key)) {
       const btn = document.querySelectorAll('.build-btn')[Number(key) - 1];
       if (btn && !btn.disabled) btn.click();
     }

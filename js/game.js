@@ -17,12 +17,13 @@ const COSTS = {
   castle:  { mandrake: 2, galleons: 3 },
   citadel: { runestone: 1, mandrake: 2, galleons: 3 },
   ward:    { runestone: 2 },
+  willow:  { wandwood: 2, mandrake: 1 },
   spell:   { owls: 1, mandrake: 1, galleons: 1 },
 };
 
 const PIECE_NAMES = {
   road: 'Floo Route', broom: 'Broomstick Route', cottage: 'Cottage', castle: 'Castle',
-  citadel: 'Citadel', ward: 'Shield Charm',
+  citadel: 'Citadel', ward: 'Shield Charm', willow: 'Whomping Willow',
 };
 
 // Victory points and per-roll yield by building.
@@ -30,6 +31,7 @@ const BUILDING_VP = { cottage: 1, castle: 2, citadel: 3 };
 const BUILDING_YIELD = { cottage: 1, castle: 2, citadel: 3 };
 
 const MAX_WARDS = 3;
+const MAX_WILLOWS = 1;       // one sanctuary per house
 const ISLAND_BONUS_VP = 1;   // for being first to settle each outer island
 const BASE_HAND_LIMIT = 7;
 
@@ -38,6 +40,8 @@ const SPELLS = {
   floo:     { name: 'Floo Powder',  icon: '\u{1F525}', desc: 'Build two routes for free — Floo Routes, or Broomstick Routes on the voyage map.' },
   accio:    { name: 'Accio',        icon: '\u{2728}',  desc: 'Take any two resources from the supply.' },
   imperio:  { name: 'Imperio',      icon: '\u{1F300}', desc: 'Name a resource; every other player hands you all of theirs.' },
+  map:      { name: "The Marauder's Map", icon: '\u{1F5FA}', desc: 'Every rival hand lies open — take the one card you like best.' },
+  turner:   { name: 'Time-Turner',  icon: '\u{23F3}', desc: 'Live the hour again: roll once more for a second harvest. A seven still stirs the Dementor.' },
   merlin:   { name: 'Order of Merlin', icon: '\u{1F396}', desc: 'Worth 1 victory point. Kept secret until you win.' },
 };
 
@@ -59,6 +63,8 @@ function newSpellDeck(rng) {
     ...Array(2).fill('floo'),
     ...Array(2).fill('accio'),
     ...Array(2).fill('imperio'),
+    ...Array(2).fill('map'),
+    ...Array(2).fill('turner'),
     ...Array(5).fill('merlin'),
   ];
   return shuffle(deck, rng);
@@ -92,7 +98,7 @@ function createGame(playerConfigs, seed, scenario) {
     aurorsPlayed: 0,
     playedSpellThisTurn: false,
     offeredThisTurn: false,
-    pieces: { road: 15, broom: 15, cottage: 5, castle: 4, citadel: 3, ward: MAX_WARDS },
+    pieces: { road: 15, broom: 15, cottage: 5, castle: 4, citadel: 3, ward: MAX_WARDS, willow: MAX_WILLOWS },
     ports: [],
     islands: [],   // outer islands this house has settled first
   }));
@@ -117,6 +123,7 @@ function createGame(playerConfigs, seed, scenario) {
     bank,
     buildings: {},   // vertexKey -> {owner, type}
     roads: {},       // edgeKey  -> {owner}
+    willows: {},     // hexId    -> the house whose Whomping Willow guards it
     dementor: board.hexes.find((h) => h.terrain === 'azkaban').id,
     spellDeck: newSpellDeck(rng),
     current: setupOrder[0],
@@ -126,6 +133,7 @@ function createGame(playerConfigs, seed, scenario) {
     phase: 'setup',          // setup | roll | main | moveDementor | steal | discard | over
     returnPhase: 'main',     // where to land once the Dementor is resolved
     dice: null,
+    extraRoll: false,        // a Time-Turner has bought one more roll
     pending: null,           // {kind:'road'|'cottage'|'castle', free:bool, remaining:n}
     discardQueue: [],
     stealTargets: [],
@@ -335,6 +343,45 @@ function placeWard(playerId, vk) {
   logMsg(p.name + ' binds a Shield Charm — they may now hold ' + handLimit(playerId) + ' cards through a seven.');
 }
 
+/* ---------- the Whomping Willow ---------- */
+function hexIsGuarded(hexId) {
+  return !!state.willows && state.willows[hexId] !== undefined;
+}
+
+// The Dementor will not settle where a Willow stands, and never on itself.
+function canDementorEnter(hexId) {
+  return hexId !== state.dementor && !hexIsGuarded(hexId);
+}
+
+function azkabanHex() {
+  const h = state.board.hexes.find((x) => x.terrain === 'azkaban');
+  return h ? h.id : state.dementor;
+}
+
+// A Willow is planted on a producing region that one of your holdings touches.
+function validWillowHexes(playerId) {
+  if (state.players[playerId].pieces.willow <= 0) return [];
+  return state.board.hexes
+    .filter((h) => h.res && !hexIsGuarded(h.id) &&
+      h.corners.some((vk) => state.buildings[vk] && state.buildings[vk].owner === playerId))
+    .map((h) => h.id);
+}
+
+function plantWillow(playerId, hexId) {
+  const p = state.players[playerId];
+  pay(p, COSTS.willow);
+  state.willows[hexId] = playerId;
+  p.pieces.willow--;
+  const hex = state.board.hexes[hexId];
+  logMsg(p.name + ' plants a Whomping Willow over ' + TERRAINS[hex.terrain].name +
+    ' — the Dementor may never settle there.');
+  // Planted on the Dementor's own region, the tree simply beats it off.
+  if (state.dementor === hexId) {
+    state.dementor = azkabanHex();
+    logMsg('The Willow lashes out and drives the Dementor back to Azkaban.', 'award');
+  }
+}
+
 function placeRoad(playerId, ek, free, kind) {
   const p = state.players[playerId];
   const want = kind || 'road';
@@ -360,6 +407,7 @@ function rollDice() {
   const d1 = 1 + Math.floor(Math.random() * 6);
   const d2 = 1 + Math.floor(Math.random() * 6);
   state.dice = [d1, d2];
+  state.extraRoll = false;
   const sum = d1 + d2;
   state.stats.rolls[sum]++;
   logMsg(currentPlayer().name + ' rolls ' + d1 + ' + ' + d2 + ' = ' + sum + '.', 'roll');
@@ -457,6 +505,7 @@ function applyDiscard(playerId, counts) {
 }
 
 function moveDementor(hexId, byPlayerId) {
+  if (!canDementorEnter(hexId)) return false;
   state.dementor = hexId;
   const hex = state.board.hexes[hexId];
   logMsg(state.players[byPlayerId].name + ' drives the Dementor to ' + TERRAINS[hex.terrain].name + '.', 'warn');
@@ -476,6 +525,7 @@ function moveDementor(hexId, byPlayerId) {
   } else {
     state.phase = 'steal';
   }
+  return true;
 }
 
 function stealFrom(victimId, thiefId) {
@@ -559,6 +609,23 @@ function flooKindsAvailable(playerId) {
   return kinds.filter((k) => p.pieces[k] > 0 && validRoadSpots(playerId, null, k).length > 0);
 }
 
+// Some scrolls need the table to be in the right state — a Time-Turner is
+// worthless before the dice have been thrown, and the Map needs a full hand
+// to rifle through. Checked here so the UI can grey the card rather than
+// swallow it.
+function spellIsCastable(card, playerId) {
+  const p = state.players[playerId];
+  if (!p.spells.includes(card) || p.playedSpellThisTurn) return false;
+  if (card === 'floo') return flooKindsAvailable(playerId).length > 0;
+  if (card === 'turner') return state.phase === 'main' && !!state.dice;
+  if (card === 'map') return state.players.some((o) => o.id !== playerId && totalCards(o) > 0);
+  return true;
+}
+
+function mapVictims(playerId) {
+  return state.players.filter((o) => o.id !== playerId && totalCards(o) > 0);
+}
+
 function playSpell(playerId, card, opts) {
   const p = state.players[playerId];
   const idx = p.spells.indexOf(card);
@@ -572,6 +639,12 @@ function playSpell(playerId, card, opts) {
     if (!kinds.length) return false;
     flooKind = (opts && opts.kind && kinds.includes(opts.kind)) ? opts.kind : kinds[0];
   }
+  let victim = null;
+  if (card === 'map') {
+    victim = mapVictims(playerId).find((o) => o.id === (opts && opts.target)) || mapVictims(playerId)[0];
+    if (!victim) return false;
+  }
+  if (card === 'turner' && !(state.phase === 'main' && state.dice)) return false;
 
   p.spells.splice(idx, 1);
   p.playedSpellThisTurn = true;
@@ -600,6 +673,20 @@ function playSpell(playerId, card, opts) {
       o.res[opts.res] = 0;
     });
     logMsg(p.name + ' casts Imperio and seizes ' + taken + ' ' + RESOURCES[opts.res].label + '.', 'spell');
+  } else if (card === 'map') {
+    let k = opts && opts.res;
+    if (!k || victim.res[k] <= 0) {
+      k = RES_KEYS.filter((r) => victim.res[r] > 0).sort((a, b) => victim.res[b] - victim.res[a])[0];
+    }
+    victim.res[k]--;
+    p.res[k]++;
+    logMsg(p.name + " unfolds the Marauder's Map and lifts 1 " + RESOURCES[k].icon +
+      ' from ' + victim.name + '.', 'spell');
+  } else if (card === 'turner') {
+    logMsg(p.name + ' turns the hourglass — the hour is lived again.', 'spell');
+    state.extraRoll = true;
+    state.dice = null;
+    state.phase = 'roll';
   }
   return true;
 }
@@ -743,6 +830,7 @@ function endTurn() {
   state.pending = null;
   state.offer = null;
   state.dice = null;
+  state.extraRoll = false;
   state.trade = null;
   state.current = (state.current + 1) % state.players.length;
   state.turnCount++;
