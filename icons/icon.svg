@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Settlers of Hogsmeade">
+  <defs>
+    <radialGradient id="night" cx="30%" cy="12%" r="95%">
+      <stop offset="0%" stop-color="#1e2856"/>
+      <stop offset="55%" stop-color="#121734"/>
+      <stop offset="100%" stop-color="#070a16"/>
+    </radialGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffeaa4"/>
+      <stop offset="45%" stop-color="#e6c85f"/>
+      <stop offset="100%" stop-color="#b8901c"/>
+    </linearGradient>
+    <filter id="soft" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#night)"/>
+
+  <!-- a scatter of stars, as on the board -->
+  <g fill="#ffffff" opacity=".55">
+    <circle cx="96"  cy="104" r="2.6"/><circle cx="404" cy="86"  r="2.2"/>
+    <circle cx="150" cy="404" r="2.4"/><circle cx="418" cy="352" r="2"/>
+    <circle cx="74"  cy="268" r="1.8"/><circle cx="330" cy="440" r="1.8"/>
+  </g>
+  <circle cx="256" cy="248" r="128" fill="#e6c85f" opacity=".18" filter="url(#soft)"/>
+
+  <!-- the hex tile the whole game is built from -->
+  <polygon points="256,92 398,174 398,338 256,420 114,338 114,174"
+           fill="rgba(20,25,48,.75)" stroke="url(#gold)" stroke-width="11" stroke-linejoin="round"/>
+
+  <!-- the sigil -->
+  <path d="M 300 118 L 176 282 L 240 282 L 214 394 L 340 226 L 272 226 Z"
+        fill="url(#gold)" stroke="#6b530d" stroke-width="7" stroke-linejoin="round"/>
+</svg>

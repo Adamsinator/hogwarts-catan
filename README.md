@@ -33,6 +33,18 @@ it, and keeps their own hand in view while the AI plays.
   resource the owner chooses. A **Pace** control sets how long AI opponents pause
 between actions.
 
+### Full screen
+
+**Full Screen** in the top bar (or on the setup screen, or `F`) hands the game the whole display —
+no address bar, no tabs. It works wherever the browser offers the Fullscreen API, iPadOS Safari
+included.
+
+For a true app on iOS, **Add to Home Screen** from the Share menu: a web app manifest and the Apple
+meta tags are in place, so it launches chrome-free with its own icon, respects the safe areas around
+the notch and home indicator, and drops the tagline to give the board that much more room. Saves and
+the career record live in the browser and carry over. Where the Fullscreen API is missing — Safari
+on iPhone — the button explains how to install instead.
+
 ### AI difficulty
 
 | Level | Behaviour | Win rate* |
@@ -106,7 +118,7 @@ Games autosave to `localStorage` and offer to resume on reload.
 - **Career record.** Wins and games per house persist across sessions, shown on the setup screen
   and in the Stats panel, with the quickest win and best score.
 - **Shortcuts.** `R` roll, `E` end turn, `T` bank trade, `O` offer a trade, `S` stats,
-  `1`–`8` build, `Esc` cancel or close.
+  `F` full screen, `1`–`8` build, `Esc` cancel or close.
 
 ## Testing
 
@@ -126,6 +138,9 @@ js/game.js      state and rules
 js/ai.js        heuristic opponents (easy / medium / hard)
 js/render.js    SVG board rendering
 js/ui.js        panels, modals, turn scheduler
+
+manifest.webmanifest  installable-app metadata
+icons/                app icon — icon.svg is the source, the PNGs are rendered from it
 ```
 
 ## Deploying to GitHub Pages

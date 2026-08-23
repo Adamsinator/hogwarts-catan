@@ -1095,6 +1095,71 @@ function careerBlock() {
     '<div class="setup-players">' + rows + '</div>';
 }
 
+/* ================= full screen ================= */
+// Safari on iPad has the Fullscreen API (prefixed); Safari on iPhone does not,
+// and there the honest answer is Add to Home Screen, which runs the game with
+// no browser chrome at all.
+function fullscreenAvailable() {
+  const el = document.documentElement;
+  return !!(el.requestFullscreen || el.webkitRequestFullscreen);
+}
+
+// Installed to a home screen — as opposed to merely filling the screen from
+// inside the browser, where the button must stay put so there is a way back.
+function isInstalled() {
+  if (window.navigator.standalone === true) return true;
+  if (fullscreenOn()) return false;
+  return ['standalone', 'minimal-ui', 'fullscreen'].some((m) =>
+    window.matchMedia('(display-mode: ' + m + ')').matches);
+}
+
+function fullscreenOn() {
+  return !!(document.fullscreenElement || document.webkitFullscreenElement);
+}
+
+function toggleFullscreen() {
+  if (!fullscreenAvailable()) return showInstallTip();
+  if (fullscreenOn()) {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen;
+    exit.call(document);
+    return;
+  }
+  const el = document.documentElement;
+  const req = el.requestFullscreen || el.webkitRequestFullscreen;
+  const done = req.call(el, { navigationUI: 'hide' });
+  // Safari rejects the promise rather than throwing when it will not play along
+  if (done && done.catch) done.catch(showInstallTip);
+}
+
+function syncFullscreen() {
+  const b = $('btn-full');
+  if (!b) return;
+  const installed = isInstalled();
+  b.hidden = installed;                       // already as full as it gets
+  document.documentElement.classList.toggle('app-frame', installed || fullscreenOn());
+  b.textContent = fullscreenOn() ? '\u21F2 Exit Full Screen' : '\u26F6 Full Screen';
+  b.setAttribute('aria-pressed', fullscreenOn() ? 'true' : 'false');
+}
+
+function showInstallTip() {
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  modal(
+    '<h2>\u26F6 Playing full screen</h2>' +
+    '<p class="sub">This browser will not hand a web page the whole screen on its own — ' +
+    'but it will run the game as an app.</p>' +
+    (ios
+      ? '<ol class="rules-body"><li>Tap the <strong>Share</strong> button in the browser bar.</li>' +
+        '<li>Choose <strong>Add to Home Screen</strong>.</li>' +
+        '<li>Open Hogsmeade from the home screen — no address bar, no tabs, the whole display.</li></ol>'
+      : '<ol class="rules-body"><li>Open your browser\u2019s menu.</li>' +
+        '<li>Choose <strong>Install</strong> or <strong>Add to Home Screen</strong>.</li>' +
+        '<li>Launch it from there and it runs in its own window.</li></ol>') +
+    '<p class="sub">Your games and career record carry over — they live in this browser either way.</p>' +
+    '<div class="actions"><button class="primary" data-x>Got it</button></div>'
+  ).root.querySelector('[data-x]').addEventListener('click', closeAllModals);
+}
+
 /* ================= new game / rules ================= */
 function showSetup() {
   if (aiTimer) clearTimeout(aiTimer);
@@ -1128,10 +1193,18 @@ function showSetup() {
         '<span><strong>Broomstick Voyage</strong><small>Islands across the Black Lake, with Goblin Lodes. First to ' + VOYAGE_VP + '.</small></span></button>' +
     '</div>' +
     '<div class="setup-players">' + rows + '</div>' +
-    '<div class="actions"><button class="ghost" data-rules>Rules</button>' +
+    '<div class="actions">' +
+    (isInstalled() ? '' : '<button class="ghost" data-full>\u26F6 Full Screen</button>') +
+    '<button class="ghost" data-rules>Rules</button>' +
     '<button class="primary" data-start>Begin the Term</button></div>',
     { dismissible: false }
   );
+
+  const fullBtn = m.root.querySelector('[data-full]');
+  if (fullBtn) fullBtn.addEventListener('click', () => {
+    toggleFullscreen();
+    setTimeout(() => { fullBtn.textContent = fullscreenOn() ? '\u21F2 Exit Full Screen' : '\u26F6 Full Screen'; }, 120);
+  });
 
   let scenario = 'classic';
   m.root.querySelectorAll('[data-map]').forEach((b) => {
@@ -1225,7 +1298,7 @@ function showRules() {
     '</ul>' +
     '<h3>Shortcuts</h3><ul>' +
     '<li><code>R</code> roll · <code>E</code> end turn · <code>T</code> bank trade · <code>O</code> offer a trade · <code>S</code> stats</li>' +
-    '<li><code>1</code>–<code>8</code> pick a thing to build · <code>Esc</code> cancel or close</li>' +
+    '<li><code>1</code>–<code>8</code> pick a thing to build · <code>F</code> full screen · <code>Esc</code> cancel or close</li>' +
     '</ul>' +
     '<h3>Titles</h3><ul>' +
     '<li><strong>Longest Floo Network</strong> — 5+ connected routes, +2 points. An opponent’s building breaks the chain.</li>' +
@@ -1293,6 +1366,10 @@ document.addEventListener('DOMContentLoaded', () => {
   $('btn-bank').addEventListener('click', showBankTrade);
   $('btn-offer').addEventListener('click', showOfferTrade);
   $('btn-rules').addEventListener('click', showRules);
+  $('btn-full').addEventListener('click', toggleFullscreen);
+  ['fullscreenchange', 'webkitfullscreenchange', 'resize'].forEach((e) =>
+    window.addEventListener(e, syncFullscreen));
+  syncFullscreen();
 
   const paceSel = $('pace');
   paceSel.value = localStorage.getItem(PACE_KEY) || 'normal';
@@ -1316,6 +1393,8 @@ document.addEventListener('DOMContentLoaded', () => {
       if (state && state.pending && !state.pending.free) { state.pending = null; render(); }
       return;
     }
+    // Full screen is about the window, not the game, so it works anywhere.
+    if (e.key.toLowerCase() === 'f') { toggleFullscreen(); return; }
     if (!state || document.querySelector('.overlay')) return;
 
     const press = (id) => { const b = $(id); if (b && !b.disabled) b.click(); };
