@@ -7,6 +7,21 @@ no dependencies, no backend. Open `index.html` or serve the folder.
 
 Two to four houses compete — any mix of humans (hot-seat) and AI at three skill levels.
 
+### Around one screen
+
+Every house is set to Human or AI independently, so two people can share a laptop or an iPad
+against two AI opponents, or four can play with no AI at all.
+
+Only the player holding the device sees cards. Everyone else's hand shows as face-down backs —
+you can count them, as you can across a real table, but not read them. That goes for the AI too:
+its resources, its Spell Scrolls and its hidden Order of Merlin points are never on screen.
+
+With two or more humans, a **pass-the-device** screen covers the table between hands and before
+a rival's discard, so the outgoing player never sees the incoming player's cards. It names who is
+up and waits for them to say they are holding it. A table playing openly can dismiss it for the
+rest of the game with *Stop asking this game*. A game with a single human is never interrupted by
+it, and keeps their own hand in view while the AI plays.
+
 ### Maps
 
 - **Hogsmeade Valley** — the classic 19-hex board. First to **12 victory points**.

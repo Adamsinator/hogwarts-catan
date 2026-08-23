@@ -141,6 +141,11 @@ function createGame(playerConfigs, seed, scenario) {
     largestArmy: { owner: null, size: 0 },
     trade: null,
     winner: null,
+    // Whose eyes the private panels are drawn for. With one human it is always
+    // them; around a shared device it is whoever last said "I'm ready".
+    deviceHolder: playerConfigs.filter((c) => !c.isAI).length === 1
+      ? playerConfigs.findIndex((c) => !c.isAI) : null,
+    handoverOff: false,      // the table has waived the pass-the-device screen
     offer: null,              // a trade an AI has put to another house
     goldQueue: [],            // houses owed a free pick from a Goblin Lode
     stats: { rolls: rollTally, harvested: players.map(() => 0), sevens: 0 },
@@ -160,6 +165,35 @@ function logMsg(text, cls) {
 }
 
 function currentPlayer() { return state.players[state.current]; }
+
+/* ---------- the shared device ----------
+   Cards, scrolls and hidden points belong to one pair of eyes. A game with a
+   single human always shows them theirs; a hot-seat game hands them over only
+   when the incoming player says they are holding the device. */
+function humanCount() { return state.players.filter((p) => !p.isAI).length; }
+
+function hotSeat() { return humanCount() > 1; }
+
+// Hands the device to this player, and reports whether they must be asked for
+// it first — nobody is asked in a game with only one human at the table.
+function ensureDevice(playerId) {
+  if (state.players[playerId].isAI) return false;
+  if (!hotSeat() || state.handoverOff) { state.deviceHolder = playerId; return false; }
+  return state.deviceHolder !== playerId;
+}
+
+// The player whose private panels may be drawn — null while a hot-seat game is
+// between hands, when nothing private may be shown at all.
+function deviceHolder() {
+  return state.deviceHolder === null || state.deviceHolder === undefined
+    ? null : state.players[state.deviceHolder];
+}
+
+// Around a shared device the cards go face down the moment a turn ends, so the
+// next AI turn cannot be used to read the last player's hand.
+function releaseDevice() {
+  if (hotSeat() && !state.handoverOff) state.deviceHolder = null;
+}
 
 function totalCards(p) { return RES_KEYS.reduce((s, k) => s + p.res[k], 0); }
 
@@ -801,11 +835,13 @@ function advanceSetup(justPlacedRoad) {
     state.phase = 'roll';
     state.current = state.setupOrder[0];
     state.turnCount = 1;
+    releaseDevice();
     logMsg('Term begins! ' + currentPlayer().name + ' rolls first.', 'roll');
     return;
   }
   state.current = state.setupOrder[state.setupIndex];
   state.setupRoadFrom = null;
+  releaseDevice();
   logMsg(currentPlayer().name + ' places a Cottage.');
 }
 
@@ -833,6 +869,7 @@ function endTurn() {
   state.extraRoll = false;
   state.trade = null;
   state.current = (state.current + 1) % state.players.length;
+  releaseDevice();
   state.turnCount++;
   state.phase = 'roll';
   logMsg('— ' + currentPlayer().name + "'s turn —", 'turn');

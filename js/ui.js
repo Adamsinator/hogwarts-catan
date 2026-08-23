@@ -82,6 +82,27 @@ function makeSteppers(limits, onChange) {
 
 function bundleTotal(v) { return RES_KEYS.reduce((s, k) => s + v[k], 0); }
 
+/* How many cards someone holds is public; which cards they are is not. These
+   draw the backs, for an opponent's hand and for a hot-seat game between
+   turns. */
+const MAX_BACKS = 14;
+
+function cardBacksHTML(n) {
+  if (!n) return '<span class="empty">No cards in hand.</span>';
+  const shown = Math.min(n, MAX_BACKS);
+  return '<div class="face-down">' +
+    new Array(shown).fill('<span class="card-back"></span>').join('') +
+    (n > shown ? '<span class="fd-more">+' + (n - shown) + '</span>' : '') +
+    '</div>';
+}
+
+function scrollBacksHTML(n) {
+  if (!n) return '<span class="empty">No scrolls held.</span>';
+  return '<div class="face-down">' +
+    new Array(Math.min(n, MAX_BACKS)).fill('<span class="scroll-back">\u{1F4DC}</span>').join('') +
+    '</div>';
+}
+
 /* ================= rendering ================= */
 function render() {
   if (!state) return;
@@ -111,11 +132,17 @@ function renderBanner() {
 
 function renderSidebar() {
   const p = currentPlayer();
-  const human = !p.isAI && state.phase !== 'over';
+  // Private panels belong to whoever is holding the device — never to an AI,
+  // and never to the last player once a hot-seat turn has been handed on.
+  const holder = deviceHolder();
+  const viewer = holder || p;
+  const open = !!holder;                       // may cards be shown face up?
+  const human = open && holder.id === p.id && state.phase !== 'over';
 
   $('turn-crest').textContent = p.crest;
   $('turn-name').textContent = p.name;
-  $('turn-vp').textContent = victoryPoints(p.id, true);
+  // A rival's Order of Merlin stays secret, so their badge shows public points.
+  $('turn-vp').textContent = victoryPoints(p.id, open && holder.id === p.id);
   const target = $('vp-target');
   if (target) target.textContent = state.vpTarget || VP_TO_WIN;
 
@@ -135,49 +162,55 @@ function renderSidebar() {
   d2.textContent = state.dice ? state.dice[1] : '·';
 
   $('btn-roll').disabled = !(human && state.phase === 'roll');
+  $('spells').classList.toggle('closed', !open);
   $('btn-roll').title = 'Roll the dice  (R)';
 
-  // hand
-  $('hand').innerHTML = RES_KEYS.map((k) => resChipHTML(k, p.res[k])).join('');
+  // hand — the holder's own, or the backs of whoever is playing
+  $('hand').innerHTML = open
+    ? RES_KEYS.map((k) => resChipHTML(k, viewer.res[k])).join('')
+    : cardBacksHTML(totalCards(viewer));
 
-  const limit = handLimit(p.id);
-  const held = totalCards(p);
+  const limit = handLimit(viewer.id);
+  const held = totalCards(viewer);
   const handHead = document.querySelector('#hand').previousElementSibling;
   if (handHead) {
-    handHead.innerHTML = 'Your Hand <span class="hand-limit' + (held > limit ? ' over' : '') + '">' +
+    const title = open ? 'Your Hand' : viewer.name + '\u2019s Hand';
+    handHead.innerHTML = title + ' <span class="hand-limit' + (held > limit ? ' over' : '') + '">' +
       held + ' / ' + limit + '</span>';
   }
 
   const posts = $('ports');
-  posts.innerHTML = p.ports.length
-    ? p.ports.map((t) => '<span class="post-badge" title="' + portLabel(t) + '">' +
+  posts.innerHTML = viewer.ports.length
+    ? viewer.ports.map((t) => '<span class="post-badge" title="' + portLabel(t) + '">' +
         (t === 'any' ? '3:1' : RESOURCES[t].icon + ' 2:1') + '</span>').join('')
     : '<span class="empty">No trading posts — the bank charges you 4:1.</span>';
 
   // build buttons
   const canAct = human && state.phase === 'main' && !state.pending;
+  const v = viewer;
   let defs = [
-    { kind: 'road', label: 'Floo Route', cost: COSTS.road, spots: () => validRoadSpots(p.id).length, left: p.pieces.road },
+    { kind: 'road', label: 'Floo Route', cost: COSTS.road, spots: () => validRoadSpots(v.id).length, left: v.pieces.road },
   ];
   if (state.scenario === 'voyage') {
     defs.push({ kind: 'broom', label: 'Broomstick', cost: COSTS.broom,
-      spots: () => validRoadSpots(p.id, null, 'broom').length, left: p.pieces.broom });
+      spots: () => validRoadSpots(v.id, null, 'broom').length, left: v.pieces.broom });
   }
   defs.push(...[
-    { kind: 'cottage', label: 'Cottage', cost: COSTS.cottage, spots: () => validCottageSpots(p.id, false).length, left: p.pieces.cottage },
-    { kind: 'castle', label: 'Castle', cost: COSTS.castle, spots: () => validCastleSpots(p.id).length, left: p.pieces.castle },
-    { kind: 'citadel', label: 'Citadel', cost: COSTS.citadel, spots: () => validCitadelSpots(p.id).length, left: p.pieces.citadel },
-    { kind: 'ward', label: 'Shield Charm', cost: COSTS.ward, spots: () => validWardSpots(p.id).length, left: p.pieces.ward },
-    { kind: 'willow', label: 'Whomping Willow', cost: COSTS.willow, spots: () => validWillowHexes(p.id).length, left: p.pieces.willow },
+    { kind: 'cottage', label: 'Cottage', cost: COSTS.cottage, spots: () => validCottageSpots(v.id, false).length, left: v.pieces.cottage },
+    { kind: 'castle', label: 'Castle', cost: COSTS.castle, spots: () => validCastleSpots(v.id).length, left: v.pieces.castle },
+    { kind: 'citadel', label: 'Citadel', cost: COSTS.citadel, spots: () => validCitadelSpots(v.id).length, left: v.pieces.citadel },
+    { kind: 'ward', label: 'Shield Charm', cost: COSTS.ward, spots: () => validWardSpots(v.id).length, left: v.pieces.ward },
+    { kind: 'willow', label: 'Whomping Willow', cost: COSTS.willow, spots: () => validWillowHexes(v.id).length, left: v.pieces.willow },
   ]);
   const grid = $('build-actions');
   grid.innerHTML = '';
   defs.forEach((d) => {
     const btn = document.createElement('button');
-    btn.className = 'build-btn' + (state.pending && state.pending.kind === d.kind ? ' active' : '');
+    btn.className = 'build-btn' +
+      (human && state.pending && state.pending.kind === d.kind ? ' active' : '');
     btn.innerHTML = '<span class="t">' + d.label + ' <small>(' + d.left + ')</small></span>' +
       '<span class="c">' + costText(d.cost) + '</span>';
-    btn.disabled = !canAct || !canAfford(p, d.cost) || d.left <= 0 || d.spots() === 0;
+    btn.disabled = !canAct || !canAfford(v, d.cost) || d.left <= 0 || d.spots() === 0;
     btn.addEventListener('click', () => { state.pending = { kind: d.kind, free: false }; render(); });
     grid.appendChild(btn);
   });
@@ -186,8 +219,8 @@ function renderSidebar() {
   spellBtn.className = 'build-btn';
   spellBtn.innerHTML = '<span class="t">Spell Scroll <small>(' + state.spellDeck.length + ')</small></span>' +
     '<span class="c">' + costText(COSTS.spell) + '</span>';
-  spellBtn.disabled = !canAct || !canAfford(p, COSTS.spell) || !state.spellDeck.length;
-  spellBtn.addEventListener('click', () => { buySpell(p.id); render(); });
+  spellBtn.disabled = !canAct || !canAfford(v, COSTS.spell) || !state.spellDeck.length;
+  spellBtn.addEventListener('click', () => { buySpell(v.id); render(); });
   grid.appendChild(spellBtn);
 
   if (state.pending && human) {
@@ -202,13 +235,18 @@ function renderSidebar() {
   // spells in hand
   const sp = $('spells');
   sp.innerHTML = '';
-  const playable = human && (state.phase === 'main' || state.phase === 'roll') && !p.playedSpellThisTurn && !state.pending;
-  const all = p.spells.concat(p.freshSpells.map((c) => c + ':fresh'));
-  if (!all.length && !p.merlinTitles.length) {
+  if (!open) {
+    // Which scrolls a rival holds is their business — only the count shows.
+    sp.innerHTML = scrollBacksHTML(viewer.spells.length + viewer.freshSpells.length + viewer.merlinTitles.length);
+    return finishSidebar(human);
+  }
+  const playable = human && (state.phase === 'main' || state.phase === 'roll') && !viewer.playedSpellThisTurn && !state.pending;
+  const all = viewer.spells.concat(viewer.freshSpells.map((c) => c + ':fresh'));
+  if (!all.length && !viewer.merlinTitles.length) {
     sp.innerHTML = '<span class="empty">No scrolls yet. Buy one to learn a spell.</span>';
   }
-  p.spells.forEach((card) => {
-    const ready = playable && spellIsCastable(card, p.id);
+  viewer.spells.forEach((card) => {
+    const ready = playable && spellIsCastable(card, viewer.id);
     const b = document.createElement('button');
     b.className = 'spell-card' + (ready ? '' : ' locked');
     b.innerHTML = SPELLS[card].icon + ' ' + SPELLS[card].name;
@@ -217,7 +255,7 @@ function renderSidebar() {
     b.addEventListener('click', () => castSpell(card));
     sp.appendChild(b);
   });
-  p.freshSpells.forEach((card) => {
+  viewer.freshSpells.forEach((card) => {
     const b = document.createElement('button');
     b.className = 'spell-card locked';
     b.innerHTML = SPELLS[card].icon + ' ' + SPELLS[card].name;
@@ -225,7 +263,7 @@ function renderSidebar() {
     b.disabled = true;
     sp.appendChild(b);
   });
-  p.merlinTitles.forEach((t) => {
+  viewer.merlinTitles.forEach((t) => {
     const b = document.createElement('button');
     b.className = 'spell-card locked';
     b.innerHTML = '🎖 ' + t;
@@ -234,6 +272,10 @@ function renderSidebar() {
     sp.appendChild(b);
   });
 
+  finishSidebar(human);
+}
+
+function finishSidebar(human) {
   $('btn-bank').disabled = !(human && state.phase === 'main' && !state.pending);
   $('btn-offer').disabled = !(human && state.phase === 'main' && !state.pending && state.players.length > 1);
   $('btn-end').disabled = !(human && state.phase === 'main' && !state.pending);
@@ -280,7 +322,7 @@ function boardHandlers() {
   };
   if (!state || state.phase === 'over') return h;
   const p = currentPlayer();
-  if (p.isAI) return h;
+  if (p.isAI || state.deviceHolder !== p.id) return h;
 
   if (state.phase === 'setup') {
     if (!state.setupRoadFrom) h.vertexTargets = validCottageSpots(p.id, true);
@@ -473,6 +515,39 @@ function promptImperio(p) {
     row.appendChild(b);
   });
   m.root.querySelector('[data-x]').addEventListener('click', m.close);
+}
+
+/* ================= passing the device ================= */
+// Around one iPad the incoming player's hand would otherwise appear while the
+// outgoing player is still holding it. This curtain hides the table until the
+// right pair of eyes is looking.
+function showHandover(playerId) {
+  const p = state.players[playerId];
+  state.deviceHolder = null;   // turn the cards over before the curtain lifts
+  render();
+  const others = state.players.filter((o) => !o.isAI && o.id !== playerId).length;
+  const m = modal(
+    '<div class="curtain-crest">' + p.crest + '</div>' +
+    '<h2 style="text-align:center">Pass the device to ' + p.name + '</h2>' +
+    '<p class="sub" style="text-align:center">Their cards stay face down until they say they are holding it' +
+      (others ? '.' : '.') + '</p>' +
+    '<div class="actions" style="justify-content:center">' +
+      '<button class="primary" data-go>I\u2019m ' + p.name + ' \u2014 I have it</button></div>' +
+    '<p class="sub curtain-opt" style="text-align:center">' +
+      '<button class="linkish" data-off>Playing openly? Stop asking this game</button></p>',
+    { dismissible: false }
+  );
+  m.root.querySelector('[data-go]').addEventListener('click', () => {
+    m.close();
+    state.deviceHolder = playerId;
+    tick();
+  });
+  m.root.querySelector('[data-off]').addEventListener('click', () => {
+    m.close();
+    state.handoverOff = true;
+    state.deviceHolder = playerId;
+    tick();
+  });
 }
 
 /* ================= discard / steal ================= */
@@ -736,6 +811,7 @@ function tick() {
 
   if (state.goldQueue && state.goldQueue.length) {
     const claim = state.goldQueue[0];
+    if (ensureDevice(claim.player)) return showHandover(claim.player);
     if (state.players[claim.player].isAI) {
       aiTimer = setTimeout(() => {
         takeGold(claim.player, AI.chooseGold(claim.player, claim.count));
@@ -749,6 +825,7 @@ function tick() {
 
   if (state.offer) {
     const to = state.players[state.offer.toId];
+    if (ensureDevice(to.id)) return showHandover(to.id);
     if (to.isAI) {
       aiTimer = setTimeout(() => {
         resolveOffer(AI.evaluateTradeOffer(to.id, state.offer.give, state.offer.get));
@@ -761,6 +838,7 @@ function tick() {
 
   if (state.phase === 'discard') {
     const id = state.discardQueue[0];
+    if (ensureDevice(id)) return showHandover(id);
     if (state.players[id].isAI) {
       aiTimer = setTimeout(() => { autoDiscard(id); tick(); }, PACE.discard);
     } else {
@@ -781,6 +859,10 @@ function tick() {
       showStealModal();
     }
     return;
+  }
+
+  if (!currentPlayer().isAI && ensureDevice(state.current)) {
+    return showHandover(state.current);
   }
 
   if (currentPlayer().isAI) {
@@ -1170,6 +1252,11 @@ function loadSave() {
     const s = JSON.parse(raw);
     if (!s || !s.board || !s.players) return null;
     s.offer = null;   // an offer in flight cannot be resumed meaningfully
+    // Who is holding the device cannot be known across a reload — a lone human
+    // always is, a table is asked again.
+    const humans = s.players.filter((pl) => !pl.isAI);
+    s.deviceHolder = humans.length === 1 ? humans[0].id : null;
+    if (s.handoverOff === undefined) s.handoverOff = false;
     return s;
   } catch (e) { return null; }
 }
