@@ -278,12 +278,14 @@ function renderBoard(svg, handlers) {
   }, svg);
 
   const layers = {};
-  ['ports', 'hexes', 'roads', 'buildings', 'hints', 'overlay'].forEach((n) => {
+  // Ports go above the hexes: on the voyage map their markers sit out in the
+  // water ring, where a sea tile would otherwise paint straight over them.
+  ['hexes', 'ports', 'roads', 'buildings', 'hints', 'overlay'].forEach((n) => {
     layers[n] = el('g', { class: 'layer-' + n }, svg);
   });
 
-  drawPorts(layers.ports);
   drawHexes(layers.hexes, handlers);
+  drawPorts(layers.ports);
   drawRoads(layers.roads);
   drawBuildings(layers.buildings);
   drawHints(layers.hints, handlers);

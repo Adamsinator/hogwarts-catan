@@ -595,13 +595,44 @@ function bankTrade(playerId, give, get) {
   return true;
 }
 
+/* A bundle may ask for `any: n` — n cards of the payer's choosing. It is
+   resolved into real cards before any trade is carried out. */
+const ANY_CARD = 'any';
+
+function bundleWild(b) { return b[ANY_CARD] || 0; }
+
 function canPayBundle(p, bundle) {
-  return RES_KEYS.every((k) => p.res[k] >= (bundle[k] || 0));
+  if (!RES_KEYS.every((k) => p.res[k] >= (bundle[k] || 0))) return false;
+  const wild = bundleWild(bundle);
+  if (!wild) return true;
+  const spare = RES_KEYS.reduce((n, k) => n + p.res[k] - (bundle[k] || 0), 0);
+  return spare >= wild;
+}
+
+// Settle a wildcard out of this player's hand, taking what they can best spare
+// — the default, and what an AI hands over.
+function fillWildcard(playerId, bundle) {
+  const p = state.players[playerId];
+  const out = {};
+  RES_KEYS.forEach((k) => { out[k] = bundle[k] || 0; });
+  let wild = bundleWild(bundle);
+  while (wild > 0) {
+    const pick = RES_KEYS
+      .filter((k) => p.res[k] - out[k] > 0)
+      .sort((a, b) => (p.res[b] - out[b]) - (p.res[a] - out[a]))[0];
+    if (!pick) break;
+    out[pick]++;
+    wild--;
+  }
+  return out;
 }
 
 function executePlayerTrade(fromId, toId, give, get) {
   const a = state.players[fromId];
   const b = state.players[toId];
+  // wildcards must already have been settled into real cards
+  give = bundleWild(give) ? fillWildcard(fromId, give) : give;
+  get = bundleWild(get) ? fillWildcard(toId, get) : get;
   RES_KEYS.forEach((k) => {
     const g = give[k] || 0, r = get[k] || 0;
     a.res[k] -= g; b.res[k] += g;
@@ -612,6 +643,8 @@ function executePlayerTrade(fromId, toId, give, get) {
 
 function bundleText(b) {
   const parts = RES_KEYS.filter((k) => b[k] > 0).map((k) => b[k] + RESOURCES[k].icon);
+  const wild = bundleWild(b);
+  if (wild) parts.push(wild + '\u2753');
   return parts.length ? parts.join(' ') : 'nothing';
 }
 

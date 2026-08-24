@@ -618,6 +618,9 @@ const AI = (function () {
     const c = cfg(playerId);
     const p = state.players[playerId];
     if (!canPayBundle(p, get)) return false;
+    // "Any card" is worth answering with whatever we can best spare, so judge
+    // the offer on the cards we would actually hand over.
+    if (bundleWild(get)) get = fillWildcard(playerId, get);
 
     const incoming = RES_KEYS.reduce((s, k) => s + (give[k] || 0), 0);
     const outgoing = RES_KEYS.reduce((s, k) => s + (get[k] || 0), 0);

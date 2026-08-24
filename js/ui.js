@@ -53,18 +53,21 @@ function costText(cost) {
   return Object.keys(cost).map((k) => cost[k] + RESOURCES[k].icon).join(' ');
 }
 
-/* A row of +/- counters, one per resource. Returns {node, values}. */
-function makeSteppers(limits, onChange) {
+/* A row of +/- counters, one per resource — plus, where a trade allows it, a
+   wildcard standing for "any card, your choice". Returns {node, values}. */
+function makeSteppers(limits, onChange, opts) {
   const values = {};
   const wrap = document.createElement('div');
   wrap.className = 'row';
-  RES_KEYS.forEach((k) => {
+  const keys = (opts && opts.wildcard) ? RES_KEYS.concat(ANY_CARD) : RES_KEYS;
+  keys.forEach((k) => {
     values[k] = 0;
     const max = limits[k] === undefined ? 99 : limits[k];
     const box = document.createElement('div');
-    box.className = 'stepper';
+    box.className = 'stepper' + (k === ANY_CARD ? ' wild' : '');
+    if (k === ANY_CARD) box.title = 'Any card — whoever accepts picks which';
     box.innerHTML =
-      '<span class="ic">' + RESOURCES[k].icon + '</span>' +
+      '<span class="ic">' + (k === ANY_CARD ? '\u2753' : RESOURCES[k].icon) + '</span>' +
       '<button type="button" data-d="-1">−</button>' +
       '<span class="val">0</span>' +
       '<button type="button" data-d="1">+</button>' +
@@ -83,7 +86,9 @@ function makeSteppers(limits, onChange) {
   return { node: wrap, values };
 }
 
-function bundleTotal(v) { return RES_KEYS.reduce((s, k) => s + v[k], 0); }
+function bundleTotal(v) {
+  return RES_KEYS.reduce((s, k) => s + (v[k] || 0), 0) + (v[ANY_CARD] || 0);
+}
 
 /* How many cards someone holds is public; which cards they are is not. These
    draw the backs, for an opponent's hand and for a hot-seat game between
@@ -314,16 +319,23 @@ function renderPlayers() {
     if (state.longestRoad.owner === p.id) badges.push('Longest Floo Network +2');
     if (state.largestArmy.owner === p.id) badges.push("Dumbledore's Army +2");
     const roadLen = longestRoadFor(p.id);
+    const scrolls = p.spells.length + p.freshSpells.length + p.merlinTitles.length;
+    const plural = (n, one, many) => n + ' ' + (n === 1 ? one : (many || one + 's'));
+    const stat = (icon, text, tip) =>
+      '<span title="' + tip + '">' + icon + ' ' + text + '</span>';
     card.innerHTML =
       '<div class="top"><span class="crest">' + p.crest + '</span>' +
       '<span class="nm">' + p.name + '</span>' +
       (p.isAI ? '<span class="ai">' + AI_LEVELS[p.level].label + '</span>' : '') +
-      '<span class="pvp" title="Public victory points">' + victoryPoints(p.id, false) + '</span></div>' +
+      '<span class="pvp" title="Victory points everyone can see — an Order of Merlin stays hidden">' +
+        victoryPoints(p.id, false) + '<em>VP</em></span></div>' +
       '<div class="stats">' +
-      '<span>🃏 ' + totalCards(p) + ' cards</span>' +
-      '<span>📜 ' + (p.spells.length + p.freshSpells.length + p.merlinTitles.length) + '</span>' +
-      '<span>🔮 ' + p.aurorsPlayed + '</span>' +
-      '<span>🛤 ' + roadLen + '</span>' +
+      stat('🃏', plural(totalCards(p), 'card'), 'Resource cards in hand') +
+      stat('📜', plural(scrolls, 'scroll'), 'Spell Scrolls held, face down') +
+      stat('🔮', plural(p.aurorsPlayed, 'Auror'),
+        "Aurors played — three takes Dumbledore's Army and 2 points") +
+      stat('🛤', roadLen + ' network',
+        'Longest unbroken run of routes — five takes the Longest Floo Network and 2 points') +
       '</div>' +
       (badges.length ? '<div class="badges">' + badges.map((b) => '<span class="badge">' + b + '</span>').join('') + '</div>' : '');
     wrap.appendChild(card);
@@ -733,14 +745,15 @@ function showOfferTrade() {
 
   const m = modal(
     '<h2>🤝 Offer a Trade</h2>' +
-    '<p class="sub">Propose a swap to the other houses.</p>' +
+    '<p class="sub">Propose a swap to the other houses. Ask for <strong>❓</strong> and you will ' +
+    'take any card they care to give — say a Runestone for whatever they can spare.</p>' +
     '<h3>You give</h3><div id="t-give"></div>' +
     '<h3>You want</h3><div id="t-get"></div>' +
     '<div class="actions"><button class="ghost" data-x>Cancel</button>' +
     '<button class="primary" data-go disabled>Send Offer</button></div>'
   );
   const giveSt = makeSteppers(limits, update);
-  const getSt = makeSteppers({}, update);
+  const getSt = makeSteppers({}, update, { wildcard: true });
   m.root.querySelector('#t-give').replaceWith(giveSt.node);
   m.root.querySelector('#t-get').replaceWith(getSt.node);
   const go = m.root.querySelector('[data-go]');
@@ -771,6 +784,8 @@ function showTradeResponses(proposer, give, get) {
     row.className = 'setup-row';
     const willing = o.isAI ? AI.evaluateTradeOffer(o.id, give, get) : false;
     row.innerHTML = '<span class="crest">' + o.crest + '</span><span class="hname">' + o.name + '</span>';
+    // With a wildcard the answer is not just yes or no — it is what they hand over.
+    const wildPay = canPay && bundleWild(get) ? fillWildcard(o.id, get) : null;
 
     const status = document.createElement('span');
     status.style.fontSize = '12.5px';
@@ -784,13 +799,15 @@ function showTradeResponses(proposer, give, get) {
       status.textContent = 'cannot pay';
       row.appendChild(status);
     } else if (o.isAI) {
-      status.textContent = willing ? 'accepts' : 'declines';
+      status.textContent = willing
+        ? (wildPay ? 'offers ' + bundleText(wildPay) : 'accepts')
+        : 'declines';
       row.appendChild(status);
       if (willing) {
         btn.textContent = 'Trade';
         btn.addEventListener('click', () => {
           m.close();
-          executePlayerTrade(proposer.id, o.id, give, get);
+          executePlayerTrade(proposer.id, o.id, give, wildPay || get);
           tick();
         });
         row.appendChild(btn);
@@ -799,6 +816,7 @@ function showTradeResponses(proposer, give, get) {
       btn.textContent = 'Accept (pass device)';
       btn.addEventListener('click', () => {
         m.close();
+        if (bundleWild(get)) return chooseWildcard(proposer, o, give, get);
         executePlayerTrade(proposer.id, o.id, give, get);
         tick();
       });
@@ -808,6 +826,44 @@ function showTradeResponses(proposer, give, get) {
   });
 
   m.root.querySelector('[data-x]').addEventListener('click', m.close);
+}
+
+// Accepting an offer that asks for "any card" means choosing which.
+function chooseWildcard(proposer, payer, give, get) {
+  const wild = bundleWild(get);
+  const fixed = {};
+  RES_KEYS.forEach((k) => { fixed[k] = get[k] || 0; });
+  const m = modal(
+    '<h2>❓ Your Choice</h2>' +
+    '<p class="sub"><strong>' + payer.name + '</strong> receives ' + bundleText(give) +
+      ' and owes <strong>' + wild + '</strong> card' + (wild === 1 ? '' : 's') +
+      ' of their choosing' + (bundleTotal(fixed) ? ', on top of ' + bundleText(fixed) : '') + '.</p>' +
+    '<div id="wild-picks"></div>' +
+    '<div class="actions"><span id="wild-count" class="sub"></span>' +
+    '<button class="ghost" data-x>Cancel</button>' +
+    '<button class="primary" data-go disabled>Hand Over</button></div>',
+    { dismissible: false }
+  );
+  const limits = {};
+  RES_KEYS.forEach((k) => { limits[k] = Math.max(0, payer.res[k] - fixed[k]); });
+  const st = makeSteppers(limits, update);
+  m.root.querySelector('#wild-picks').replaceWith(st.node);
+  const go = m.root.querySelector('[data-go]');
+  const counter = m.root.querySelector('#wild-count');
+  function update(v) {
+    const t = bundleTotal(v);
+    counter.textContent = t + ' / ' + wild + ' chosen';
+    go.disabled = t !== wild;
+  }
+  update(st.values);
+  m.root.querySelector('[data-x]').addEventListener('click', () => { m.close(); tick(); });
+  go.addEventListener('click', () => {
+    const paid = {};
+    RES_KEYS.forEach((k) => { paid[k] = fixed[k] + st.values[k]; });
+    m.close();
+    executePlayerTrade(proposer.id, payer.id, give, paid);
+    tick();
+  });
 }
 
 /* ================= an AI puts a trade to the table ================= */
