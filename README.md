@@ -99,7 +99,9 @@ Standard Catan, including the fiddly bits:
 - Roll of 7: discard half above 7 cards, banish the Dementor, steal a card.
 - Bank shortfall rule — if the supply can't pay every claimant, nobody collects that resource.
 - 4:1 / 3:1 / 2:1 trading, plus player-to-player offers in both directions: medium and hard
-  opponents open negotiations rather than only answering them.
+  opponents open negotiations rather than only answering them. An offer may ask for a wildcard —
+  **❓**, any card of the payer's choosing — settled into real cards as the deal is struck: an AI
+  answers with what it can most easily part with, a human picks from their own hand.
 - Spell Scrolls are unplayable on the turn they're drawn; one per turn. A scroll that could do
   nothing — Floo Powder with nowhere to build, a Time-Turner before the dice are thrown, a
   Marauder's Map over empty hands — is greyed out rather than swallowed.
@@ -122,7 +124,10 @@ Games autosave to `localStorage` and offer to resume on reload.
 - **The Tally.** A running histogram of every roll against what probability expects, plus each
   house's total harvest, longest route and Aurors played.
 - **Trading posts.** The posts you hold are listed under your hand, so your bank rate is never a
-  guess.
+  guess. Both maps carry the same nine — four 3:1 and one 2:1 for each resource; on the voyage map
+  they sit out on the shoreline of the Black Lake.
+- **The house cards** carry the four numbers you need on a rival: cards in hand, Spell Scrolls
+  held, Aurors played, and the length of their longest network, beside their public score.
 - **Rematch on this board.** Replay the same map with the same houses from the victory screen.
 - **Career record.** Wins and games per house persist across sessions, shown on the setup screen
   and in the Stats panel, with the quickest win and best score.

@@ -1421,6 +1421,7 @@ function showRules() {
     '<h3>Trading</h3><ul>' +
     '<li>With the bank at <code>4:1</code>, or <code>3:1</code> / <code>2:1</code> at a Trading Post your Cottage touches. The posts you hold are listed beneath your hand.</li>' +
     '<li>Or offer a swap to the other houses — and they will put offers to you in turn.</li>' +
+    '<li>An offer may ask for <strong>❓</strong> — any card the accepting house cares to give. Handy when you only want to shift a spare.</li>' +
     '</ul>' +
     '<h3>Reading the Board</h3><ul>' +
     '<li>When you place, every legal junction shows what it pays per roll out of 36. Green marks a strong spot, gold a fair one. Hover for the exact regions.</li>' +
