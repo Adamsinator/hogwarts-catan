@@ -363,10 +363,15 @@ function drawHexes(g, handlers) {
     if (state.dementor === hex.id) drawDementor(grp, hex);
 
     if (handlers.hexClickable && handlers.hexClickable(hex.id)) {
+      const chosen = handlers.chosen && handlers.chosen.type === 'hex' && handlers.chosen.key === hex.id;
+      const waiting = handlers.chosen && !chosen;
       grp.classList.add('clickable');
+      if (waiting) grp.classList.add('dimmed');
       el('polygon', {
         points: pts,
-        fill: '#8fe3ff', opacity: 0.22, stroke: '#8fe3ff', 'stroke-width': 4, class: 'hex-target',
+        fill: chosen ? '#ffe082' : '#8fe3ff', opacity: chosen ? 0.34 : 0.22,
+        stroke: chosen ? '#ffe082' : '#8fe3ff', 'stroke-width': chosen ? 6 : 4,
+        class: chosen ? 'hex-chosen' : 'hex-target',
       }, grp);
       grp.addEventListener('click', () => handlers.onHex(hex.id));
     }
@@ -454,6 +459,15 @@ function citadelPath() {
 }
 const BUILDING_PATHS = { cottage: cottagePath, castle: castlePath, citadel: citadelPath };
 
+// The piece a confirmed tap would put down — a Shield Charm goes on a holding
+// that is already there, so it keeps whatever shape it is warding.
+function ghostKind() {
+  if (state.phase === 'setup') return 'cottage';
+  const kind = state.pending ? state.pending.kind : 'cottage';
+  if (kind === 'ward') return 'castle';
+  return kind;
+}
+
 function drawBuildings(g) {
   Object.keys(state.buildings).forEach((vk) => {
     const b = state.buildings[vk];
@@ -479,18 +493,37 @@ function drawBuildings(g) {
 }
 
 function drawHints(g, handlers) {
+  const pick = handlers.chosen;
+  const dim = (grp, isChosen) => { if (pick && !isChosen) grp.classList.add('dimmed'); };
+
   (handlers.vertexTargets || []).forEach((vk) => {
     const v = state.board.vertices[vk];
     const y = vertexYield(vk);
     // Grade the marker by how much the junction actually pays out, and print
     // the pip count, so a spot can be judged without counting dots by hand.
     const tone = y.pips >= 10 ? '#8ce99a' : y.pips >= 7 ? '#ffe082' : '#c9b89a';
-    const grp = el('g', { class: 'hint vertex-hint', transform: 'translate(' + v.x + ',' + v.y + ')' }, g);
+    const chosen = !!pick && pick.type === 'vertex' && pick.key === vk;
+    const grp = el('g', {
+      class: 'hint vertex-hint' + (chosen ? ' chosen' : ''),
+      transform: 'translate(' + v.x + ',' + v.y + ')',
+    }, g);
+    dim(grp, chosen);
     el('circle', { r: 26, fill: 'transparent' }, grp);   // generous touch target
-    el('circle', { r: 17, fill: tone, opacity: 0.26 }, grp);
-    el('circle', { r: 12, fill: tone, stroke: '#4a3c14', 'stroke-width': 1.6 }, grp);
-    el('text', { y: 4, 'text-anchor': 'middle', class: 'hint-pips' }, grp).textContent = y.pips;
-    if (y.port) el('circle', { cx: 11, cy: -11, r: 4.5, fill: '#12172c', stroke: '#c9a227', 'stroke-width': 1.5 }, grp);
+    if (chosen) {
+      // a ghost of the piece, so the spot can be judged before it is paid for
+      el('circle', { r: 24, fill: '#ffe082', opacity: 0.22 }, grp);
+      el('circle', { r: 24, fill: 'none', stroke: '#ffe082', 'stroke-width': 3 }, grp);
+      el('path', {
+        d: (BUILDING_PATHS[ghostKind()] || cottagePath)(),
+        fill: currentPlayer().color, opacity: 0.85, stroke: '#080a14', 'stroke-width': 2.5,
+        'stroke-linejoin': 'round',
+      }, grp);
+    } else {
+      el('circle', { r: 17, fill: tone, opacity: 0.26 }, grp);
+      el('circle', { r: 12, fill: tone, stroke: '#4a3c14', 'stroke-width': 1.6 }, grp);
+      el('text', { y: 4, 'text-anchor': 'middle', class: 'hint-pips' }, grp).textContent = y.pips;
+      if (y.port) el('circle', { cx: 11, cy: -11, r: 4.5, fill: '#12172c', stroke: '#c9a227', 'stroke-width': 1.5 }, grp);
+    }
     el('title', null, grp).textContent = vertexYieldText(vk);
     grp.addEventListener('click', () => handlers.onVertex(vk));
   });
@@ -498,10 +531,19 @@ function drawHints(g, handlers) {
   (handlers.edgeTargets || []).forEach((ek) => {
     const e = state.board.edges[ek];
     const gm = roadGeom(e);
-    const grp = el('g', { class: 'hint edge-hint' }, g);
+    const chosen = !!pick && pick.type === 'edge' && pick.key === ek;
+    const grp = el('g', { class: 'hint edge-hint' + (chosen ? ' chosen' : '') }, g);
+    dim(grp, chosen);
     el('line', { ...gm, stroke: 'transparent', 'stroke-width': 30, 'stroke-linecap': 'round' }, grp);
-    el('line', { ...gm, stroke: '#ffe082', 'stroke-width': 16, 'stroke-linecap': 'round', opacity: 0.25 }, grp);
-    el('line', { ...gm, stroke: '#ffe082', 'stroke-width': 6, 'stroke-linecap': 'round', 'stroke-dasharray': '9 6' }, grp);
+    if (chosen) {
+      // the route as it would be laid, ringed so the choice is unmistakable
+      el('line', { ...gm, stroke: '#ffe082', 'stroke-width': 20, 'stroke-linecap': 'round', opacity: 0.35 }, grp);
+      el('line', { ...gm, stroke: '#080a14', 'stroke-width': 13, 'stroke-linecap': 'round' }, grp);
+      el('line', { ...gm, stroke: currentPlayer().color, 'stroke-width': 8.5, 'stroke-linecap': 'round' }, grp);
+    } else {
+      el('line', { ...gm, stroke: '#ffe082', 'stroke-width': 16, 'stroke-linecap': 'round', opacity: 0.25 }, grp);
+      el('line', { ...gm, stroke: '#ffe082', 'stroke-width': 6, 'stroke-linecap': 'round', 'stroke-dasharray': '9 6' }, grp);
+    }
     grp.addEventListener('click', () => handlers.onEdge(ek));
   });
 }

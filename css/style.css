@@ -135,11 +135,6 @@ button:disabled{opacity:.4;cursor:not-allowed;}
     'roster chronicle';
 }
 
-@media (min-width:1001px) and (max-width:1239px){
-  #game .players>*{flex:1 1 148px;}
-  .chronicle{max-height:132px;}
-}
-
 .board-wrap{
   grid-area:board;position:relative;
   display:flex;align-items:center;justify-content:center;
@@ -154,9 +149,10 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 .roster{grid-area:roster;min-width:0;}
 .chronicle{grid-area:chronicle;min-height:0;display:flex;flex-direction:column;max-height:170px;}
 
-/* Wide screens gain a left gutter for the roster and the chronicle, which lets
-   the board grow into space that would otherwise sit empty either side of it. */
-@media (min-width:1240px){
+/* From a tablet in landscape upwards the roster stands in a gutter of its own,
+   which lets the board grow into the width the houses were taking off the
+   bottom, and lets the chronicle fill the height that was going spare. */
+@media (min-width:1001px){
   #game{
     grid-template-columns:206px minmax(0,1fr) 344px;
     grid-template-rows:auto minmax(0,1fr);
@@ -169,6 +165,18 @@ button:disabled{opacity:.4;cursor:not-allowed;}
   #game #players{flex-direction:column;flex-wrap:nowrap;}
   #game .players>*{flex:0 0 auto;}
   .chronicle{max-height:none;}
+}
+
+/* A tablet has the shape for it but not the pixels to spare, so the gutter and
+   the sidebar are trimmed and the house cards ride tighter. */
+@media (min-width:1001px) and (max-width:1239px){
+  #game{gap:10px;grid-template-columns:180px minmax(0,1fr) 302px;}
+  #game #players{gap:8px;}
+  .pcard{padding:8px 10px;}
+  .pcard .nm{font-size:14px;}
+  .pcard .stats{gap:7px;font-size:11px;margin-top:5px;}
+  .pcard .top{gap:6px;}
+  .build-btn .t{font-size:12px;}
 }
 
 /* Absolutely positioned so the board can never inflate its own grid row. */
@@ -208,7 +216,27 @@ button:disabled{opacity:.4;cursor:not-allowed;}
   color:var(--gold-soft);font-family:var(--serif);letter-spacing:.04em;
   padding:8px 18px;border-radius:999px;font-size:14px;
   box-shadow:0 8px 24px rgba(0,0,0,.5);pointer-events:none;
+  max-width:min(94%,540px);text-align:center;
 }
+/* Asking before building: the bar grows buttons and takes taps of its own. */
+.board-banner.confirm{
+  pointer-events:auto;border-radius:16px;padding:10px 12px 12px;
+  background:rgba(10,12,22,.96);box-shadow:0 14px 34px rgba(0,0,0,.65);
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+}
+.board-banner .ask{display:block;font-size:15px;}
+.board-banner .note{
+  display:block;font-family:var(--body);font-size:12px;color:var(--muted);
+  letter-spacing:normal;
+}
+.board-banner.confirm.at-bottom{top:auto;bottom:14px;}
+.confirm-btns{display:flex;gap:8px;}
+.confirm-btns .ghost{padding:7px 16px;}
+.confirm-btns .primary{padding:7px 22px;font-family:var(--serif);}
+/* Everything still on offer steps back while one spot is being considered. */
+.dimmed{opacity:.28;}
+.hint.chosen{animation:none;}
+.hex-chosen{animation:pulse 1.4s ease-in-out infinite;}
 
 /* ---------- panels ---------- */
 .panel{
@@ -474,6 +502,9 @@ button:disabled{opacity:.4;cursor:not-allowed;}
 }
 @media (max-width:520px){
   .topbar{flex-wrap:wrap;}
+  /* six controls will not sit on one phone-width line — let them stack. */
+  .topbar-actions{flex-wrap:wrap;justify-content:flex-end;row-gap:6px;}
+  .topbar-actions .ghost{padding:7px 11px;font-size:13px;}
   .build-grid{grid-template-columns:1fr;}
   .modal{padding:16px;}
   /* House, then its two controls beneath — a phone has no room for one line. */

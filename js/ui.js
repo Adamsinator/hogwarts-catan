@@ -22,6 +22,9 @@ const $ = (id) => document.getElementById(id);
 let aiTimer = null;
 let aiActions = 0;
 let lastWasRoll = false;
+// A tap on the board picks a spot; it is not built until it is confirmed. Kept
+// out of `state` on purpose — it is a half-finished gesture, not part of the game.
+let choice = null;
 
 /* ================= modal plumbing ================= */
 function modal(html, opts) {
@@ -117,6 +120,25 @@ function render() {
 function renderBanner() {
   const b = $('board-banner');
   const p = currentPlayer();
+
+  if (choice) {
+    const l = choiceLabel(choice);
+    b.hidden = false;
+    b.classList.add('confirm');
+    // Sit on the far side of the board from the spot being considered, so the
+    // bar never covers the thing it is asking about.
+    b.classList.toggle('at-bottom', choiceY(choice) < 0);
+    b.innerHTML = '<span class="ask">' + l.ask + '</span>' +
+      (l.note ? '<span class="note">' + l.note + '</span>' : '') +
+      '<span class="confirm-btns">' +
+        '<button class="ghost" data-cancel>Cancel</button>' +
+        '<button class="primary" data-go>' + l.go + '</button></span>';
+    b.querySelector('[data-cancel]').addEventListener('click', cancelChoice);
+    b.querySelector('[data-go]').addEventListener('click', commitChoice);
+    return;
+  }
+  b.classList.remove('confirm');
+
   let msg = '';
   if (state.phase === 'over') msg = '';
   else if (p.isAI) msg = p.name + ' is thinking…';
@@ -319,6 +341,7 @@ function boardHandlers() {
     vertexTargets: [], edgeTargets: [],
     onVertex, onEdge, onHex,
     hexClickable: () => false,
+    chosen: choice,
   };
   if (!state || state.phase === 'over') return h;
   const p = currentPlayer();
@@ -345,7 +368,58 @@ function boardHandlers() {
   return h;
 }
 
-function onVertex(vk) {
+function onVertex(vk) { choice = { type: 'vertex', key: vk }; render(); }
+function onEdge(ek) { choice = { type: 'edge', key: ek }; render(); }
+function onHex(hexId) {
+  if (state.phase !== 'moveDementor' && !(state.pending && state.pending.kind === 'willow')) return;
+  choice = { type: 'hex', key: hexId };
+  render();
+}
+
+function cancelChoice() { choice = null; render(); }
+
+function commitChoice() {
+  if (!choice) return;
+  const c = choice;
+  choice = null;
+  if (c.type === 'vertex') placeAtVertex(c.key);
+  else if (c.type === 'edge') placeAtEdge(c.key);
+  else placeAtHex(c.key);
+}
+
+// What the confirmation is actually asking, and what the button should say.
+function choiceLabel(c) {
+  const p = currentPlayer();
+  if (c.type === 'hex') {
+    const hex = state.board.hexes[c.key];
+    const where = TERRAINS[hex.terrain].name + (hex.number ? ' (' + hex.number + ')' : '');
+    return state.pending && state.pending.kind === 'willow'
+      ? { ask: 'Plant your Whomping Willow on ' + where + '?', go: 'Plant' }
+      : { ask: 'Banish the Dementor to ' + where + '?', go: 'Banish' };
+  }
+  if (c.type === 'edge') {
+    const kind = state.phase === 'setup' ? 'road' : (state.pending ? state.pending.kind : 'road');
+    return kind === 'broom'
+      ? { ask: 'Fly a Broomstick Route here?', go: 'Fly' }
+      : { ask: 'Lay a Floo Route here?', go: 'Lay' };
+  }
+  const kind = state.phase === 'setup' ? 'cottage' : (state.pending ? state.pending.kind : 'cottage');
+  const yields = (kind === 'cottage') ? vertexYieldText(c.key).split('\n')[0] : '';
+  if (kind === 'castle') return { ask: 'Upgrade this Cottage into a Castle?', go: 'Upgrade' };
+  if (kind === 'citadel') return { ask: 'Raise this Castle into a Citadel?', go: 'Raise' };
+  if (kind === 'ward') return { ask: 'Bind a Shield Charm to this holding?', go: 'Bind' };
+  return { ask: 'Build your Cottage here?', go: 'Build', note: yields };
+}
+
+// Where on the board the choice sits, in board coordinates (0 is the middle).
+function choiceY(c) {
+  if (c.type === 'vertex') return state.board.vertices[c.key].y;
+  if (c.type === 'hex') return state.board.hexes[c.key].cy;
+  const e = state.board.edges[c.key];
+  return (e.y1 + e.y2) / 2;
+}
+
+function placeAtVertex(vk) {
   const p = currentPlayer();
   if (state.phase === 'setup') {
     placeCottage(p.id, vk, true);
@@ -370,7 +444,7 @@ function onVertex(vk) {
   tick();
 }
 
-function onEdge(ek) {
+function placeAtEdge(ek) {
   const p = currentPlayer();
   if (state.phase === 'setup') {
     placeRoad(p.id, ek, true);
@@ -389,7 +463,7 @@ function onEdge(ek) {
   tick();
 }
 
-function onHex(hexId) {
+function placeAtHex(hexId) {
   if (state.pending && state.pending.kind === 'willow') {
     plantWillow(state.current, hexId);
     state.pending = null;
@@ -804,6 +878,7 @@ function showIncomingOffer() {
 /* ================= scheduler ================= */
 function tick() {
   if (aiTimer) { clearTimeout(aiTimer); aiTimer = null; }
+  choice = null;
   render();
   save();
 
@@ -1293,12 +1368,13 @@ function showRules() {
     '</ul>' +
     '<h3>Reading the Board</h3><ul>' +
     '<li>When you place, every legal junction shows what it pays per roll out of 36. Green marks a strong spot, gold a fair one. Hover for the exact regions.</li>' +
+    '<li>Nothing is built by a single tap: choosing a spot shows what would stand there and what it would pay, and waits for you to confirm it.</li>' +
     '<li>After a roll, the regions that paid out are ringed in gold.</li>' +
     '<li><strong>Stats</strong> keeps a tally of every roll against what probability expects.</li>' +
     '</ul>' +
     '<h3>Shortcuts</h3><ul>' +
     '<li><code>R</code> roll · <code>E</code> end turn · <code>T</code> bank trade · <code>O</code> offer a trade · <code>S</code> stats</li>' +
-    '<li><code>1</code>–<code>8</code> pick a thing to build · <code>F</code> full screen · <code>Esc</code> cancel or close</li>' +
+    '<li><code>1</code>–<code>8</code> pick a thing to build · <code>Enter</code> confirm a placement · <code>F</code> full screen · <code>Esc</code> cancel or close</li>' +
     '</ul>' +
     '<h3>Titles</h3><ul>' +
     '<li><strong>Longest Floo Network</strong> — 5+ connected routes, +2 points. An opponent’s building breaks the chain.</li>' +
@@ -1390,7 +1466,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if (e.key === 'Escape') {
       const dismissible = [...document.querySelectorAll('.overlay')].pop();
       if (dismissible) { dismissible.remove(); return; }
+      if (choice) { cancelChoice(); return; }
       if (state && state.pending && !state.pending.free) { state.pending = null; render(); }
+      return;
+    }
+    if ((e.key === 'Enter' || e.key === ' ') && choice && !document.querySelector('.overlay')) {
+      e.preventDefault();
+      commitChoice();
       return;
     }
     // Full screen is about the window, not the game, so it works anywhere.

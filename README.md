@@ -12,6 +12,10 @@ Two to four houses compete — any mix of humans (hot-seat) and AI at three skil
 Every house is set to Human or AI independently, so two people can share a laptop or an iPad
 against two AI opponents, or four can play with no AI at all.
 
+From a tablet in landscape upwards the houses stand in a gutter down the left with the chronicle
+beneath them, which leaves the middle of the screen to the board and fills the height that would
+otherwise sit empty under it.
+
 Only the player holding the device sees cards. Everyone else's hand shows as face-down backs —
 you can count them, as you can across a real table, but not read them. That goes for the AI too:
 its resources, its Spell Scrolls and its hidden Order of Merlin points are never on screen.
@@ -107,6 +111,11 @@ Games autosave to `localStorage` and offer to resume on reload.
 
 ### Playing aids
 
+- **Confirm before you build.** A tap on the board picks a spot rather than committing to it: the
+  piece appears as a ghost, everything else steps back, and a bar asks before it is paid for —
+  with the junction's yield spelled out for a Cottage. `Enter` confirms, `Esc` backs out. It sits
+  on the far side of the board from the spot in question, so it never covers what it is asking
+  about.
 - **Junction values.** Every legal placement shows what it pays per roll out of 36, graded green
   for strong and gold for fair, with the exact regions on hover.
 - **Harvest ring.** Regions that just paid out are ringed in gold, so a roll reads off the board.
@@ -118,7 +127,7 @@ Games autosave to `localStorage` and offer to resume on reload.
 - **Career record.** Wins and games per house persist across sessions, shown on the setup screen
   and in the Stats panel, with the quickest win and best score.
 - **Shortcuts.** `R` roll, `E` end turn, `T` bank trade, `O` offer a trade, `S` stats,
-  `F` full screen, `1`–`8` build, `Esc` cancel or close.
+  `F` full screen, `1`–`8` build, `Enter` confirm a placement, `Esc` cancel or close.
 
 ## Testing
 
